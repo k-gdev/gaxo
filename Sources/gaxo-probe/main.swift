@@ -32,25 +32,30 @@ struct Options {
     }
 }
 
-/// Counts what the engine delivers.
+/// Counts what the engine delivers, and decodes the video to prove it is usable.
 final class CountingSink: MediaSink {
     private let lock = NSLock()
     private(set) var videoFrames = 0
     private(set) var videoBytes = 0
+    private(set) var decodedFrames = 0
     private(set) var size = CGSize.zero
     private(set) var audioCodec: UInt8 = 0
     private(set) var audioFrames = 0
     private(set) var volumeDB: Float?
+    private lazy var decoder = VideoDecoder { [weak self] _, _ in
+        self?.lock.withLock { self?.decodedFrames += 1 }
+    }
 
     func videoFrame(_ annexB: UnsafeRawBufferPointer, ntpNanos: UInt64) {
         lock.withLock {
             videoFrames += 1
             videoBytes += annexB.count
         }
+        decoder.decode(annexB, ntpNanos: ntpNanos)
     }
 
     func videoSize(source: CGSize, size: CGSize) { lock.withLock { self.size = size } }
-    func videoFlush() {}
+    func videoFlush() { decoder.flush() }
     func audioFormat(codec: UInt8, samplesPerFrame: UInt16) { lock.withLock { audioCodec = codec } }
     func audioFrame(_ data: UnsafeRawBufferPointer, codec: UInt8, ntpNanos: UInt64) {
         lock.withLock { audioFrames += 1 }
@@ -59,16 +64,19 @@ final class CountingSink: MediaSink {
     func volume(db: Float) { lock.withLock { volumeDB = db } }
 
     var summary: String {
-        lock.withLock {
+        let dims = decoder.dimensions.map { "\(Int($0.width))×\(Int($0.height))" } ?? "-"
+        return lock.withLock {
             let kb = videoBytes / 1024
             let vol = volumeDB.map { String(format: "%.1f dB", $0) } ?? "-"
-            return "video \(videoFrames) frames (\(kb) KB) size \(Int(size.width))×\(Int(size.height)) | "
+            return "video \(videoFrames) frames (\(kb) KB) size \(Int(size.width))×\(Int(size.height)) "
+                + "decoded \(decodedFrames) at \(dims) | "
                 + "audio ct=\(audioCodec) \(audioFrames) frames | volume \(vol)"
         }
     }
 }
 
 let options = Options(Array(CommandLine.arguments.dropFirst()))
+setvbuf(stdout, nil, _IOLBF, 0) // keep status lines whole when stdout is a file
 Log.echoToStderr = true
 
 let defaults = UserDefaults(suiteName: "com.gaxo.probe")!
