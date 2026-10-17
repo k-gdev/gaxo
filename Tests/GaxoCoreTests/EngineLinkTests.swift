@@ -1,70 +1,58 @@
 import Foundation
 import Testing
-import UxPlayEngine
+@testable import GaxoCore
 
 /// Proves the vendored UxPlay engine compiles, links statically and can start
-/// and stop through the C shim.
+/// and stop through the C shim and its Swift wrapper.
 @Suite struct EngineLinkTests {
-    private func tempKeyfile() -> URL {
-        FileManager.default.temporaryDirectory
+    private func config(port: UInt16) -> EngineConfig {
+        let keyfile = FileManager.default.temporaryDirectory
             .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("identity.pem")
+        return EngineConfig(name: "GaxoTest", deviceID: "02:11:22:33:44:55", keyfile: keyfile,
+                            basePort: port, width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
+                            pinOnce: false, advertise: false, logLevel: 0)
     }
 
-    private func startEngine(port: UInt16, keyfile: URL, into engine: inout OpaquePointer?) -> Int32 {
-        try? FileManager.default.createDirectory(
-            at: keyfile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        return "GaxoTest".withCString { name in
-            "02:11:22:33:44:55".withCString { deviceID in
-                keyfile.path.withCString { key in
-                    var config = gaxo_engine_config()
-                    config.name = name
-                    config.device_id = deviceID
-                    config.keyfile = key
-                    config.base_port = port
-                    config.width = 1920
-                    config.height = 1080
-                    config.refresh_rate = 60
-                    config.max_fps = 60
-                    config.pin_once = false
-                    config.advertise = false
-                    config.log_level = 0
-                    var callbacks = gaxo_engine_callbacks()
-                    return gaxo_engine_start(&config, &callbacks, &engine)
-                }
-            }
-        }
-    }
-
-    @Test func startsOnDynamicPortAndStops() {
-        let keyfile = tempKeyfile()
-        var engine: OpaquePointer?
-        let result = startEngine(port: 0, keyfile: keyfile, into: &engine)
-        #expect(result == GAXO_OK)
-        #expect(engine != nil)
-        #expect(gaxo_engine_port(engine) > 0)
-        gaxo_engine_stop(engine)
-        #expect(FileManager.default.fileExists(atPath: keyfile.path))
+    @Test func startsOnDynamicPortAndStops() throws {
+        let config = config(port: 0)
+        let engine = Engine(config: config)
+        try engine.start()
+        #expect(engine.port > 0)
+        engine.stop()
+        engine.stop() // idempotent
+        #expect(FileManager.default.fileExists(atPath: config.keyfile.path))
     }
 
     /// Same mapping as `uxplay -p <base>`: TCP base = mirror data, base+1 = RTSP/HTTP.
-    @Test func listensOnBasePlusOneLikeUxPlay() {
+    @Test func listensOnBasePlusOneLikeUxPlay() throws {
         let base = UInt16.random(in: 40_000...59_990)
-        var engine: OpaquePointer?
-        #expect(startEngine(port: base, keyfile: tempKeyfile(), into: &engine) == GAXO_OK)
-        #expect(gaxo_engine_port(engine) == base + 1)
-        gaxo_engine_stop(engine)
+        let engine = Engine(config: config(port: base))
+        try engine.start()
+        #expect(engine.port == base + 1)
+        engine.stop()
     }
 
-    @Test func secondEngineOnSamePortFails() {
+    @Test func secondEngineOnSamePortFails() throws {
         let base = UInt16.random(in: 40_000...59_990)
-        var first: OpaquePointer?
-        #expect(startEngine(port: base, keyfile: tempKeyfile(), into: &first) == GAXO_OK)
+        let first = Engine(config: config(port: base))
+        try first.start()
+        defer { first.stop() }
 
-        var second: OpaquePointer?
-        #expect(startEngine(port: base, keyfile: tempKeyfile(), into: &second) == GAXO_ERR_PORT)
-        #expect(second == nil)
+        let second = Engine(config: config(port: base))
+        #expect(throws: EngineError.portInUse(base)) { try second.start() }
+    }
 
-        gaxo_engine_stop(first)
+    @Test func keyIsReusedAcrossRestarts() throws {
+        let config = config(port: 0)
+        let first = Engine(config: config)
+        try first.start()
+        first.stop()
+        let saved = try Data(contentsOf: config.keyfile)
+
+        let second = Engine(config: config)
+        try second.start()
+        second.stop()
+        #expect(try Data(contentsOf: config.keyfile) == saved)
     }
 }
