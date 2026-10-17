@@ -8,10 +8,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let statusModel = StatusViewModel()
 
     private var accepting = true
+    private var currentClient: ClientInfo?
     private var statusItem: StatusItemController!
     private lazy var statusWindow = StatusWindowController(model: statusModel) { [weak self] in
         self?.showSettings()
     }
+    private lazy var mirror: MirrorWindowController = {
+        let mirror = MirrorWindowController()
+        mirror.onUserClose = { [weak self] in self?.userClosedMirror() }
+        mirror.onShow = { [weak self] in self?.updateActivationPolicy() }
+        return mirror
+    }()
+    private let audioPlayer = AudioPlayer()
+    private lazy var media = MediaRouter(mirror: mirror, audioPlayer: audioPlayer)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("Gaxo starting, device ID \(identity.deviceID)")
@@ -24,6 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = settingsStore.settings
         statusModel.name = settings.name
         statusItem.update(state: .stopped, name: settings.name, accepting: accepting)
+        media.playSound = settings.playSound
+        mirror.setFloating(settings.keepOnTop)
+        session.media = media
         session.onStateChange = { [weak self] state in self?.sessionStateChanged(state) }
         session.start(config: settingsStore.engineConfig(identity: identity))
 
@@ -59,8 +71,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func sessionStateChanged(_ state: SessionState) {
         statusModel.state = state
         statusItem.update(state: state, name: settingsStore.settings.name, accepting: accepting)
-        if case .awaitingCode = state {
+
+        switch state {
+        case let .mirroring(client):
+            currentClient = client
+            mirror.present(clientName: client.name)
+        case .awaitingCode:
             showStatusWindow()
+        case .ready, .stopped, .failed:
+            if currentClient != nil {
+                currentClient = nil
+                media.sessionEnded()
+                if settingsStore.settings.closeWindowWhenMirroringStops {
+                    mirror.closeForSessionEnd()
+                } else {
+                    mirror.resetVideo()
+                }
+            }
+        }
+    }
+
+    private func userClosedMirror() {
+        if case .mirroring = session.state {
+            Log.info("Mirror window closed; disconnecting the iPhone")
+            session.disconnect()
         }
     }
 
@@ -77,7 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showMirrorWindow() {
-        // Task 7
+        guard mirror.window?.isVisible == true || currentClient != nil else { return }
+        mirror.showWindow(nil)
+        updateActivationPolicy()
+        NSApp.activate()
     }
 
     @objc func disconnect() {
