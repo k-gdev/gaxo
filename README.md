@@ -71,8 +71,9 @@ scripts/install.sh
 open ~/Applications/Gaxo.app
 ```
 
-`build-app.sh` makes `build/Gaxo.app`, signed with your Apple Development
-identity (set `GAXO_SIGN_ID` to use another). `install.sh` copies it to
+`build-app.sh` makes `build/Gaxo.app`, signed with the first Apple Development
+identity in your keychain (set `GAXO_SIGN_ID` to choose another, or `-` for
+ad-hoc signing, e.g. for a build you share). `install.sh` copies it to
 `~/Applications`. Both refuse to replace anything they did not create.
 
 First launch, macOS asks:

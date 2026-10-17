@@ -4,7 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SIGN_ID="${GAXO_SIGN_ID:-Apple Development: (your identity)}"
+# Signing identity: GAXO_SIGN_ID if set ("-" = ad-hoc), else the first
+# "Apple Development" identity in the keychain, else ad-hoc.
+SIGN_ID="${GAXO_SIGN_ID:-$(security find-identity -v -p codesigning \
+    | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -1)}"
+SIGN_ID="${SIGN_ID:--}"
 APP="build/Gaxo.app"
 MARKER="Contents/Resources/gaxo-build-marker"
 ICONSET="build/.AppIcon.iconset"
