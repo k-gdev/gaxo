@@ -105,6 +105,7 @@ final class CountingSink: MediaSink {
 
 let options = Options(Array(CommandLine.arguments.dropFirst()))
 setvbuf(stdout, nil, _IOLBF, 0) // keep status lines whole when stdout is a file
+Log.enableFile()
 Log.echoToStderr = true
 
 let defaults = UserDefaults(suiteName: "com.gaxo.probe")!

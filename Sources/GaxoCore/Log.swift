@@ -1,13 +1,24 @@
+import Darwin
 import Foundation
 import os
 
-/// Logging to the unified log (subsystem `com.gaxo`) and to
+/// Logging to the unified log (subsystem `com.gaxo`) and, once enabled, to
 /// `~/Library/Logs/Gaxo/gaxo.log`, so a silent refusal from the iPhone can be
 /// read back and compared with UxPlay's own debug output.
 public enum Log {
     private static let app = Logger(subsystem: "com.gaxo", category: "app")
     private static let engineLog = Logger(subsystem: "com.gaxo", category: "engine")
-    private static let file = LogFile(url: GaxoPaths.logFile)
+    private static let fileLock = NSLock()
+    nonisolated(unsafe) private static var file: LogFile?
+
+    /// The app and the probe write a log file; tests and libraries do not unless asked.
+    public static func enableFile(at url: URL = GaxoPaths.logFile) {
+        fileLock.withLock { file = LogFile(url: url) }
+    }
+
+    public static func disableFile() {
+        fileLock.withLock { file = nil }
+    }
 
     /// Also echo every line to stderr (the probe turns this on).
     nonisolated(unsafe) public static var echoToStderr = false
@@ -40,7 +51,7 @@ public enum Log {
 
     private static func write(_ tag: String, _ message: String) {
         let line = "\(timestamp()) [\(tag)] \(message)\n"
-        file.append(line)
+        fileLock.withLock { file }?.append(line)
         if echoToStderr {
             FileHandle.standardError.write(Data(line.utf8))
         }
@@ -54,26 +65,30 @@ public enum Log {
     }
 }
 
-/// Append-only log file, safe to use from engine threads.
-private final class LogFile: @unchecked Sendable {
+/// Append-only log file, safe to use from engine threads and from several
+/// processes at once (O_APPEND: every write lands at the current end of file).
+final class LogFile: @unchecked Sendable {
     private let url: URL
     private let lock = NSLock()
-    private var handle: FileHandle?
+    private var fd: Int32 = -1
 
     init(url: URL) {
         self.url = url
     }
 
+    deinit {
+        if fd >= 0 { close(fd) }
+    }
+
     func append(_ line: String) {
         lock.lock()
         defer { lock.unlock() }
-        if handle == nil {
-            if !FileManager.default.fileExists(atPath: url.path) {
-                FileManager.default.createFile(atPath: url.path, contents: nil)
-            }
-            handle = try? FileHandle(forWritingTo: url)
-            _ = try? handle?.seekToEnd()
+        if fd < 0 {
+            fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0o644)
         }
-        try? handle?.write(contentsOf: Data(line.utf8))
+        guard fd >= 0 else { return }
+        Data(line.utf8).withUnsafeBytes { bytes in
+            _ = Darwin.write(fd, bytes.baseAddress, bytes.count)
+        }
     }
 }

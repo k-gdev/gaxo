@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var accepting = true
     private var currentClient: ClientInfo?
+    private var statusWindowPolicy = StatusWindowPolicy()
     private var statusItem: StatusItemController!
     private lazy var statusWindow = StatusWindowController(model: statusModel) { [weak self] in
         self?.showSettings()
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var media = MediaRouter(mirror: mirror, audioPlayer: audioPlayer)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.enableFile()
         Log.info("Gaxo starting, device ID \(identity.deviceID)")
         // An unbundled executable starts with no UI rights; claim them before making any.
         NSApp.setActivationPolicy(.accessory)
@@ -87,6 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .mirroring(client):
             currentClient = client
             mirror.present(clientName: client.name)
+            // The status window steps aside while mirroring (it comes back afterwards).
+            if statusWindowPolicy.sessionStarted(windowVisible: statusWindow.window?.isVisible == true) {
+                statusWindow.window?.orderOut(nil)
+            }
         case .awaitingCode:
             showStatusWindow()
         case .ready, .stopped, .failed:
@@ -97,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     mirror.closeForSessionEnd()
                 } else {
                     mirror.resetVideo()
+                }
+                if statusWindowPolicy.sessionEnded() {
+                    statusWindow.showWindow(nil) // without activating Gaxo: no focus stealing
+                    updateActivationPolicy()
                 }
             }
         }
