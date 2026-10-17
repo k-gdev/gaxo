@@ -4,9 +4,7 @@ import Testing
 
 @Suite struct SettingsTests {
     private func makeStore() throws -> (SettingsStore, () -> Void) {
-        let suite = "gaxo-test-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        return (SettingsStore(defaults: defaults), { defaults.removePersistentDomain(forName: suite) })
+        (SettingsStore(defaults: MemoryPreferences()), {})
     }
 
     @Test func defaultsMatchSpec() {
@@ -61,9 +59,47 @@ import Testing
         #expect(config.keyfile == GaxoPaths.keyfile)
     }
 
+    @Test func emptyNameFallsBackToGaxo() {
+        #expect(Settings.cleanName("") == "Gaxo")
+        #expect(Settings.cleanName("   \n ") == "Gaxo")
+    }
+
+    @Test func nameIsTrimmedAndCappedAt40Chars() {
+        #expect(Settings.cleanName("  Living Room  ") == "Living Room")
+        let long = String(repeating: "abcde", count: 10) // 50 chars
+        #expect(Settings.cleanName(long).count == 40)
+        // Bonjour allows 63 bytes for "<12-hex MAC>@<name>": keep the name within 50 UTF-8 bytes.
+        let wide = String(repeating: "é", count: 40) // 80 bytes
+        #expect(Settings.cleanName(wide).utf8.count <= 50)
+    }
+
+    @Test func requireCodeChangeRequiresRestart() {
+        var changed = Settings.default
+        changed.requireCode = true
+        #expect(SettingsStore.requiresEngineRestart(.default, changed))
+    }
+
+    @Test func engineConfigUsesCleanName() throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+        store.settings.name = "   "
+        #expect(store.engineConfig(identity: DeviceIdentity(deviceID: "02:11:22:33:44:55")).name == "Gaxo")
+    }
+
     @Test func resolutionSizes() {
         #expect(Resolution.hd720.size == (1280, 720))
         #expect(Resolution.hd1080.size == (1920, 1080))
         #expect(Resolution.qhd1440.size == (2560, 1440))
+    }
+}
+
+@Suite struct NameDraftTests {
+    @Test func nameDraftAppliesOnlyWhenItChangesTheName() {
+        #expect(Settings.default.applyingNameDraft("Gaxo") == nil)
+        #expect(Settings.default.applyingNameDraft("  Gaxo  ") == nil, "same name after cleaning")
+        #expect(Settings.default.applyingNameDraft("   ") == nil, "blank falls back to the current default name")
+        var expected = Settings.default
+        expected.name = "Gaxo Test"
+        #expect(Settings.default.applyingNameDraft(" Gaxo Test ") == expected)
     }
 }

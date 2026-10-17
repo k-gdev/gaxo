@@ -12,7 +12,7 @@ public struct DeviceIdentity: Equatable {
 
     static let defaultsKey = "deviceID"
 
-    public static func loadOrCreate(defaults: UserDefaults = .standard) -> DeviceIdentity {
+    public static func loadOrCreate(defaults: PreferenceStore = UserDefaults.standard) -> DeviceIdentity {
         if let saved = defaults.string(forKey: defaultsKey), !saved.isEmpty {
             return DeviceIdentity(deviceID: saved)
         }

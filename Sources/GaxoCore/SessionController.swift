@@ -100,10 +100,16 @@ public final class SessionController: EngineDelegate {
         executor { [self] in stopNow() }
     }
 
+    /// Applies a new config. While not accepting connections the engine stays
+    /// stopped and the config is used when connections are accepted again.
     public func restart(config: EngineConfig) {
         executor { [self] in
+            let accepting = lock.withLock { () -> Bool in
+                self.config = config
+                return self.accepting
+            }
             stopNow()
-            startNow(config)
+            if accepting { startNow(config) }
         }
     }
 

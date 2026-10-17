@@ -13,10 +13,7 @@ import Testing
     }
 
     @Test func identityPersists() throws {
-        let suite = "gaxo-test-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-
+        let defaults = MemoryPreferences()
         let first = DeviceIdentity.loadOrCreate(defaults: defaults)
         let second = DeviceIdentity.loadOrCreate(defaults: defaults)
         #expect(first.deviceID == second.deviceID)

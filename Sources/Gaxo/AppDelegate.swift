@@ -20,6 +20,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return mirror
     }()
     private let audioPlayer = AudioPlayer()
+    private lazy var settingsModel = SettingsViewModel(settings: settingsStore.settings)
+    private lazy var settingsWindow: SettingsWindowController = {
+        let controller = SettingsWindowController(model: settingsModel) { [weak self] settings in
+            self?.applySettings(settings)
+        }
+        controller.onClose = { [weak self] in
+            guard let self, let settings = settingsModel.settingsWithDraftName() else { return }
+            applySettings(settings)
+        }
+        return controller
+    }()
     private lazy var media = MediaRouter(mirror: mirror, audioPlayer: audioPlayer)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -107,7 +118,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showSettings() {
-        Log.info("Settings window not built yet") // Task 8
+        if LoginItem.isAvailable, settingsStore.settings.openAtLogin != LoginItem.isEnabled {
+            // The user may have changed it in System Settings → General → Login Items.
+            var settings = settingsStore.settings
+            settings.openAtLogin = LoginItem.isEnabled
+            settingsStore.settings = settings
+        }
+        settingsModel.settings = settingsStore.settings
+        settingsModel.draftName = settingsStore.settings.name
+        settingsWindow.showWindow(nil)
+        updateActivationPolicy()
+        NSApp.activate()
+    }
+
+    private func applySettings(_ requested: Settings) {
+        let old = settingsStore.settings
+        var new = requested
+        new.name = Settings.cleanName(new.name)
+
+        if old.openAtLogin != new.openAtLogin {
+            do {
+                try LoginItem.set(new.openAtLogin)
+            } catch {
+                Log.error("Could not change Open at login: \(error)")
+                new.openAtLogin = old.openAtLogin
+                NSSound.beep()
+            }
+        }
+        settingsStore.settings = new
+        settingsModel.settings = new
+        statusModel.name = new.name
+        if old.keepOnTop != new.keepOnTop { mirror.setFloating(new.keepOnTop) }
+        if old.playSound != new.playSound { media.playSound = new.playSound }
+        if SettingsStore.requiresEngineRestart(old, new) {
+            Log.info("Settings changed; restarting the receiver as \"\(new.name)\"")
+            session.restart(config: settingsStore.engineConfig(identity: identity))
+        }
+        statusItem.update(state: session.state, name: new.name, accepting: accepting)
     }
 
     @objc func showMirrorWindow() {

@@ -39,6 +39,35 @@ public struct Settings: Codable, Equatable {
         closeWindowWhenMirroringStops: true,
         playSound: true,
         requireCode: false)
+
+    /// The receiver name as shown on the iPhone: trimmed, at most 40 characters and
+    /// 50 UTF-8 bytes (Bonjour allows 63 for "<MAC>@<name>"), never empty.
+    public static func cleanName(_ raw: String) -> String {
+        var name = String(raw.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        while name.utf8.count > 50 { name.removeLast() }
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? Settings.default.name : name
+    }
+}
+
+/// Where settings and the device ID are kept: UserDefaults in the app, memory in tests.
+public protocol PreferenceStore: AnyObject {
+    func data(forKey key: String) -> Data?
+    func string(forKey key: String) -> String?
+    func set(_ value: Any?, forKey key: String)
+}
+
+extension UserDefaults: PreferenceStore {}
+
+extension Settings {
+    /// These settings with `draft` as the name, or nil when that changes nothing.
+    public func applyingNameDraft(_ draft: String) -> Settings? {
+        let clean = Settings.cleanName(draft)
+        guard clean != name else { return nil }
+        var settings = self
+        settings.name = clean
+        return settings
+    }
 }
 
 /// Loads and saves `Settings` in user defaults and derives the engine config.
@@ -47,9 +76,9 @@ public final class SettingsStore {
     public static let basePort: UInt16 = 7100
     static let defaultsKey = "settings"
 
-    private let defaults: UserDefaults
+    private let defaults: PreferenceStore
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: PreferenceStore = UserDefaults.standard) {
         self.defaults = defaults
     }
 
@@ -70,7 +99,7 @@ public final class SettingsStore {
     public func engineConfig(identity: DeviceIdentity, logLevel: Int32 = 6) -> EngineConfig {
         let s = settings
         return EngineConfig(
-            name: s.name,
+            name: Settings.cleanName(s.name),
             deviceID: identity.deviceID,
             keyfile: GaxoPaths.keyfile,
             basePort: Self.basePort,

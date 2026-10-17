@@ -187,6 +187,20 @@ private final class Harness {
         #expect(h.session.state == .ready)
     }
 
+    /// Settings changed while "Accept connections" is off: stay invisible, but use the
+    /// new settings when connections are accepted again.
+    @Test func restartWhilePausedStaysPausedThenUsesNewConfig() {
+        let h = Harness()
+        h.session.start(config: Harness.config("Gaxo"))
+        h.session.setAcceptingConnections(false)
+        h.session.restart(config: Harness.config("Living Room"))
+        #expect(h.session.state == .stopped)
+        #expect(h.engines.count == 1, "no engine started while paused")
+        h.session.setAcceptingConnections(true)
+        #expect(h.engines.last?.config.name == "Living Room")
+        #expect(h.session.state == .ready)
+    }
+
     @Test func pinShownThenMirroring() {
         let h = Harness()
         h.session.start(config: Harness.config())
