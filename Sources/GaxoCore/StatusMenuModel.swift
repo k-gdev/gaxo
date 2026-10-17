@@ -23,7 +23,7 @@ public enum StatusMenuModel {
             .toggle(title: "Accept connections", isOn: accepting),
             .separator,
         ]
-        if case .mirroring = state {
+        if state.isShowingPhone {
             items += [
                 .action(title: "Show Mirror Window", key: "", id: .showMirrorWindow),
                 .action(title: "Disconnect", key: "", id: .disconnect),
@@ -44,6 +44,7 @@ public enum StatusMenuModel {
         case .ready: "Ready · no device connected"
         case let .mirroring(client): "Mirroring from \(client.name)"
         case let .awaitingCode(code): "Enter code \(code) on your iPhone"
+        case .playingVideo: "Playing a video from your iPhone"
         case .stopped: accepting ? "Starting…" : "Paused · not visible to iPhones"
         case let .failed(error): failure(error)
         }
@@ -57,6 +58,16 @@ public enum StatusMenuModel {
             "Can’t announce Gaxo on the network"
         case .dnssdInit, .raopInit:
             "Can’t start the receiver"
+        }
+    }
+}
+
+extension SessionState {
+    /// Mirroring or playing an AirPlay video: the phone's picture is on this Mac.
+    public var isShowingPhone: Bool {
+        switch self {
+        case .mirroring, .playingVideo: true
+        default: false
         }
     }
 }

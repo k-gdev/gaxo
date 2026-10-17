@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let statusModel = StatusViewModel()
 
     private var accepting = true
-    private var currentClient: ClientInfo?
+    private var showingPhone = false
     private var statusWindowPolicy = StatusWindowPolicy()
     private var statusItem: StatusItemController!
     private lazy var statusWindow = StatusWindowController(model: statusModel) { [weak self] in
@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }()
     private lazy var media = MediaRouter(mirror: mirror, audioPlayer: audioPlayer)
+    private lazy var videoPlayer = VideoPlayerController(mirror: mirror)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.enableFile()
@@ -47,8 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusModel.name = settings.name
         statusItem.update(state: .stopped, name: settings.name, accepting: accepting)
         media.playSound = settings.playSound
+        videoPlayer.muted = !settings.playSound
         mirror.setFloating(settings.keepOnTop)
         session.media = media
+        session.videoPlayer = videoPlayer
         session.onStateChange = { [weak self] state in self?.sessionStateChanged(state) }
         session.start(config: settingsStore.engineConfig(identity: identity))
 
@@ -88,12 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch state {
         case let .mirroring(client):
-            currentClient = client
             mirror.present(clientName: client.name)
-            // The status window steps aside while mirroring (it comes back afterwards).
-            if statusWindowPolicy.sessionStarted(windowVisible: statusWindow.window?.isVisible == true) {
-                statusWindow.window?.orderOut(nil)
-            }
         case .awaitingCode:
             showStatusWindow()
             // The person is looking at the Mac to read the code: put it in front of everything.
@@ -101,25 +99,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { [self] in
                 Log.info("Status window showing code: \(statusWindow.sizeReport)")
             }
-        case .ready, .stopped, .failed:
-            if currentClient != nil {
-                currentClient = nil
-                media.sessionEnded()
-                if settingsStore.settings.closeWindowWhenMirroringStops {
-                    mirror.closeForSessionEnd()
-                } else {
-                    mirror.resetVideo()
-                }
-                if statusWindowPolicy.sessionEnded() {
-                    statusWindow.showWindow(nil) // without activating Gaxo: no focus stealing
-                    updateActivationPolicy()
-                }
+        case .playingVideo, .ready, .stopped, .failed:
+            break
+        }
+
+        if state.isShowingPhone, !showingPhone {
+            // Mirroring or an AirPlay video began: the status window steps aside.
+            showingPhone = true
+            if statusWindowPolicy.sessionStarted(windowVisible: statusWindow.window?.isVisible == true) {
+                statusWindow.window?.orderOut(nil)
+            }
+        } else if showingPhone, state.endsShowingPhone {
+            showingPhone = false
+            media.sessionEnded()
+            if settingsStore.settings.closeWindowWhenMirroringStops {
+                mirror.closeForSessionEnd()
+            } else {
+                mirror.resetVideo()
+            }
+            if statusWindowPolicy.sessionEnded() {
+                statusWindow.showWindow(nil) // without activating Gaxo: no focus stealing
+                updateActivationPolicy()
             }
         }
     }
 
     private func userClosedMirror() {
-        if case .mirroring = session.state {
+        if session.state.isShowingPhone {
             Log.info("Mirror window closed; disconnecting the iPhone")
             session.disconnect()
         }
@@ -166,7 +172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsModel.settings = new
         statusModel.name = new.name
         if old.keepOnTop != new.keepOnTop { mirror.setFloating(new.keepOnTop) }
-        if old.playSound != new.playSound { media.playSound = new.playSound }
+        if old.playSound != new.playSound {
+            media.playSound = new.playSound
+            videoPlayer.muted = !new.playSound
+        }
         if SettingsStore.requiresEngineRestart(old, new) {
             Log.info("Settings changed; restarting the receiver as \"\(new.name)\"")
             session.restart(config: settingsStore.engineConfig(identity: identity))
@@ -175,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showMirrorWindow() {
-        guard mirror.window?.isVisible == true || currentClient != nil else { return }
+        guard mirror.window?.isVisible == true || showingPhone else { return }
         mirror.showWindow(nil)
         updateActivationPolicy()
         NSApp.activate()
@@ -197,5 +206,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateActivationPolicy() {
         let hasWindow = NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) }
         NSApp.setActivationPolicy(hasWindow ? .regular : .accessory)
+    }
+}
+
+private extension SessionState {
+    /// Back to Ready, stopped or failed (a code prompt does not end what is on screen).
+    var endsShowingPhone: Bool {
+        switch self {
+        case .ready, .stopped, .failed: true
+        case .mirroring, .playingVideo, .awaitingCode: false
+        }
     }
 }

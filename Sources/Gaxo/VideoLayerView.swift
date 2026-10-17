@@ -12,6 +12,7 @@ final class VideoLayerView: NSView {
     private let lock = NSLock()
     private var newestFrame: CVPixelBuffer?
     private var shownCount = 0
+    private var playerLayer: AVPlayerLayer? // main thread only
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -58,6 +59,25 @@ final class VideoLayerView: NSView {
         let renderer = displayLayer.sampleBufferRenderer
         return "shown \(shown); renderer status=\(renderer.status.rawValue) ready=\(renderer.isReadyForMoreMediaData) "
             + "flushNeeded=\(renderer.requiresFlushToResumeDecoding) error=\(renderer.error.map { String(describing: $0) } ?? "none")"
+    }
+
+    /// AirPlay video: show the player's picture on top of the mirror layer. Main thread.
+    func showPlayer(_ player: AVPlayer) {
+        hidePlayer()
+        let playerLayer = AVPlayerLayer(player: player)
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.frame = bounds
+        playerLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        playerLayer.backgroundColor = NSColor.black.cgColor
+        layer?.addSublayer(playerLayer)
+        self.playerLayer = playerLayer
+    }
+
+    /// Main thread.
+    func hidePlayer() {
+        playerLayer?.player = nil
+        playerLayer?.removeFromSuperlayer()
+        playerLayer = nil
     }
 
     /// Drops the picture (session over).

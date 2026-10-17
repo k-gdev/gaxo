@@ -20,10 +20,13 @@ public struct EngineConfig: Equatable {
     /// With `pinOnce`: always this code (0…9999). nil = a new random code each time,
     /// which UxPlay accepts only once (a mistyped entry then locks the iPhone out).
     public var fixedPIN: UInt16?
+    /// Advertise AirPlay video (UxPlay HLS mode), so YouTube can send its video.
+    public var airPlayVideo: Bool
 
     public init(name: String, deviceID: String, keyfile: URL, basePort: UInt16,
                 width: UInt16, height: UInt16, refreshRate: UInt16, maxFPS: UInt16,
-                pinOnce: Bool, advertise: Bool, logLevel: Int32, fixedPIN: UInt16? = nil) {
+                pinOnce: Bool, advertise: Bool, logLevel: Int32, fixedPIN: UInt16? = nil,
+                airPlayVideo: Bool = false) {
         self.name = name
         self.deviceID = deviceID
         self.keyfile = keyfile
@@ -36,5 +39,6 @@ public struct EngineConfig: Equatable {
         self.advertise = advertise
         self.logLevel = logLevel
         self.fixedPIN = fixedPIN
+        self.airPlayVideo = airPlayVideo
     }
 }

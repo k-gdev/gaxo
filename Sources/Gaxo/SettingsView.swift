@@ -55,6 +55,19 @@ struct SettingsView: View {
                     Text("30 fps").tag(30)
                     Text("60 fps").tag(60)
                 }
+                Toggle(isOn: Binding(
+                    get: { model.settings.playsYouTubeVideos },
+                    set: { on in
+                        var settings = model.settings
+                        settings.playYouTubeVideos = on
+                        apply(settings)
+                    })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Play YouTube videos (AirPlay video)")
+                        Text("YouTube sends its videos separately; without this, they freeze while mirroring")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             Section("Window") {
                 Toggle("Keep mirror window on top", isOn: binding(\.keepOnTop))

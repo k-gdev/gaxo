@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import GaxoCore
 
 /// The mirror window: a normal, resizable window that keeps the phone's shape,
@@ -65,6 +66,18 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             let rotated = WindowSizing.rotatedFrame(current: current, video: size, visible: visible)
             window.setFrame(window.frameRect(forContentRect: rotated), display: true, animate: true)
         }
+    }
+
+    /// AirPlay video: play it in this window (opens the window if needed). Main thread.
+    func showPlayer(_ player: AVPlayer) {
+        videoView.showPlayer(player)
+        if window?.isVisible != true || videoSize == nil {
+            videoSizeChanged(CGSize(width: 1920, height: 1080)) // until the video reports its size
+        }
+    }
+
+    func hidePlayer() {
+        videoView.hidePlayer()
     }
 
     /// The session ended; close without disconnecting anyone.

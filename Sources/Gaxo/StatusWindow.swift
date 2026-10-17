@@ -60,6 +60,7 @@ struct StatusView: View {
         case .ready: "Ready to mirror"
         case let .mirroring(client): "Mirroring from \(client.name)"
         case .awaitingCode: "Enter this code on your iPhone"
+        case .playingVideo: "Playing a video"
         case .stopped: model.accepting ? "Starting…" : "Paused"
         case .failed: "Gaxo can’t receive right now"
         }
@@ -71,6 +72,8 @@ struct StatusView: View {
             "On your iPhone, open Control Center, tap Screen Mirroring, then choose **\(model.name)**."
         case .mirroring:
             "Close the mirror window to disconnect."
+        case .playingVideo:
+            "Your iPhone is playing a video in Gaxo. Close the mirror window to stop."
         case .awaitingCode:
             "Your iPhone is asking for a code to connect to **\(model.name)**."
         case .stopped:
@@ -85,7 +88,7 @@ struct StatusView: View {
 
     private var footer: String {
         switch model.state {
-        case .ready, .mirroring, .awaitingCode: "Visible on your network as \(model.name)"
+        case .ready, .mirroring, .awaitingCode, .playingVideo: "Visible on your network as \(model.name)"
         case .stopped: model.accepting ? "Starting…" : "Not visible on the network"
         case .failed: "Not visible on the network"
         }
@@ -93,7 +96,7 @@ struct StatusView: View {
 
     private var dotColor: Color {
         switch model.state {
-        case .ready, .mirroring, .awaitingCode: Color(red: 0.18, green: 0.70, blue: 0.31)
+        case .ready, .mirroring, .awaitingCode, .playingVideo: Color(red: 0.18, green: 0.70, blue: 0.31)
         case .stopped: .orange
         case .failed: .red
         }

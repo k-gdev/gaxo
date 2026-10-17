@@ -154,3 +154,22 @@ import Testing
         #expect(Settings.codeText(4821) == "4821")
     }
 }
+
+@Suite struct YouTubeSettingTests {
+    @Test func youTubeVideosAreOnByDefaultAndReachTheEngine() {
+        let store = SettingsStore(defaults: MemoryPreferences())
+        let identity = DeviceIdentity(deviceID: "02:11:22:33:44:55")
+        #expect(store.settings.playsYouTubeVideos)
+        #expect(store.engineConfig(identity: identity).airPlayVideo)
+        var settings = store.settings
+        settings.playYouTubeVideos = false
+        store.settings = settings
+        #expect(!store.engineConfig(identity: identity).airPlayVideo)
+    }
+
+    @Test func togglingYouTubeVideosRestartsTheEngine() {
+        var new = Settings.default
+        new.playYouTubeVideos = false
+        #expect(SettingsStore.requiresEngineRestart(.default, new))
+    }
+}

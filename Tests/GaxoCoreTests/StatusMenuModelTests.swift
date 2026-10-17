@@ -49,4 +49,11 @@ import Testing
         }
         #expect(status.contains("4821"))
     }
+
+    @Test func playingVideoMenuOffersDisconnect() {
+        let items = StatusMenuModel.items(state: .playingVideo, name: "Gaxo", accepting: true)
+        #expect(items.first == .header(title: "Gaxo", status: "Playing a video from your iPhone"))
+        #expect(items.contains(.action(title: "Show Mirror Window", key: "", id: .showMirrorWindow)))
+        #expect(items.contains(.action(title: "Disconnect", key: "", id: .disconnect)))
+    }
 }

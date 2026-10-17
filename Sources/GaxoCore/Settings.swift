@@ -30,6 +30,10 @@ public struct Settings: Codable, Equatable {
     public var requireCode: Bool
     /// The fixed 4-digit code (0…9999) the iPhone must enter when `requireCode` is on.
     public var pairingCode: Int?
+    /// AirPlay video for YouTube; nil (settings saved before this option) means on.
+    public var playYouTubeVideos: Bool?
+
+    public var playsYouTubeVideos: Bool { playYouTubeVideos ?? true }
 
     public static let `default` = Settings(
         name: "Gaxo",
@@ -41,7 +45,8 @@ public struct Settings: Codable, Equatable {
         closeWindowWhenMirroringStops: true,
         playSound: true,
         requireCode: false,
-        pairingCode: nil)
+        pairingCode: nil,
+        playYouTubeVideos: true)
 
     /// These settings with a code assigned when one is needed; an existing code is kept.
     public func ensuringPairingCode(_ random: () -> Int = { Int.random(in: 0...9999) }) -> Settings {
@@ -125,7 +130,8 @@ public final class SettingsStore {
             pinOnce: s.requireCode,
             advertise: true,
             logLevel: logLevel,
-            fixedPIN: s.requireCode ? s.pairingCode.map { UInt16($0 % 10000) } : nil)
+            fixedPIN: s.requireCode ? s.pairingCode.map { UInt16($0 % 10000) } : nil,
+            airPlayVideo: s.playsYouTubeVideos)
     }
 
     /// Changes the iPhone sees (name, video format, pairing) need an engine restart.
@@ -135,5 +141,6 @@ public final class SettingsStore {
             || old.frameRate != new.frameRate
             || old.requireCode != new.requireCode
             || old.pairingCode != new.pairingCode
+            || old.playsYouTubeVideos != new.playsYouTubeVideos
     }
 }

@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIdentifier</key>
-	<string>com.gaxo.Gaxo</string>
-	<key>CFBundleName</key>
-	<string>Gaxo</string>
 	<key>CFBundleDisplayName</key>
 	<string>Gaxo</string>
 	<key>CFBundleExecutable</key>
+	<string>Gaxo</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.gaxo.Gaxo</string>
+	<key>CFBundleName</key>
 	<string>Gaxo</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -16,20 +18,15 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>26.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>GPL-3.0. Built on the UxPlay engine.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Gaxo needs the local network so your iPhone can find it and mirror its screen.</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_airplay._tcp</string>
@@ -37,5 +34,13 @@
 	</array>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Gaxo saves screenshots of your iPhone screen to the Desktop.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>GPL-3.0. Built on the UxPlay engine.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Gaxo needs the local network so your iPhone can find it and mirror its screen.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 </dict>
 </plist>

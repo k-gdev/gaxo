@@ -27,6 +27,7 @@ struct gaxo_engine {
     unsigned short port;
     bool advertise;
     bool registered;
+    bool hls;
     float volume_db;
 };
 
@@ -57,15 +58,28 @@ static void on_conn_feedback(void *cls) {
     if (e->cb.feedback) e->cb.feedback(e->cb.ctx);
 }
 
+/* Mirrors uxplay.cpp video_reset(): the same engine clean-up for each reset type. */
 static void on_video_reset(void *cls, reset_type_t type) {
     gaxo_engine *e = cls;
     switch (type) {
     case RESET_TYPE_NOHOLD:
+        if (e->hls) raop_destroy_airplay_video(e->raop, -1);
+        if (e->cb.video_stopped) e->cb.video_stopped(e->cb.ctx);
+        if (e->hls && e->cb.hls_ended) e->cb.hls_ended(e->cb.ctx);
+        break;
     case RESET_TYPE_RTP_SHUTDOWN:
-    case RESET_TYPE_RTP_TO_HLS_TEARDOWN:
+    case RESET_TYPE_RTP_TO_HLS_TEARDOWN: /* mirroring stops; an AirPlay video may follow */
         if (e->cb.video_stopped) e->cb.video_stopped(e->cb.ctx);
         break;
-    default: /* HLS reset types: HLS is not advertised */
+    case RESET_TYPE_HLS_SHUTDOWN:
+        raop_destroy_airplay_video(e->raop, -1);
+        raop_remove_hls_connections(e->raop);
+        if (e->cb.hls_ended) e->cb.hls_ended(e->cb.ctx);
+        break;
+    case RESET_TYPE_HLS_EOS:
+        if (e->cb.hls_ended) e->cb.hls_ended(e->cb.ctx);
+        break;
+    case RESET_TYPE_ON_VIDEO_PLAY: /* playback already started by on_video_play */
         break;
     }
 }
@@ -138,6 +152,48 @@ static void on_report_client_request(void *cls, char *device_id, char *model, ch
     }
 }
 
+/* ---- AirPlay video (HLS) ---- */
+
+static void on_video_play(void *cls, const char *location, const float start_position) {
+    gaxo_engine *e = cls;
+    if (e->cb.hls_play) e->cb.hls_play(e->cb.ctx, location ? location : "", start_position);
+}
+
+static void on_video_scrub(void *cls, const float position) {
+    gaxo_engine *e = cls;
+    if (e->cb.hls_scrub) e->cb.hls_scrub(e->cb.ctx, position);
+}
+
+static void on_video_rate(void *cls, const float rate) {
+    gaxo_engine *e = cls;
+    if (e->cb.hls_rate) e->cb.hls_rate(e->cb.ctx, rate);
+}
+
+static void on_video_stop(void *cls) {
+    gaxo_engine *e = cls;
+    if (e->cb.hls_stop) e->cb.hls_stop(e->cb.ctx);
+}
+
+static void on_video_acquire_playback_info(void *cls, playback_info_t *info) {
+    gaxo_engine *e = cls;
+    gaxo_hls_playback p = { .duration = 0, .position = -1, .rate = 0 };
+    if (e->cb.hls_playback) e->cb.hls_playback(e->cb.ctx, &p);
+    info->duration = p.duration;
+    info->position = p.position;
+    info->rate = p.rate;
+    info->seek_start = p.seek_start;
+    info->seek_duration = p.seek_duration;
+    info->playback_buffer_empty = p.buffer_empty;
+    info->playback_buffer_full = p.buffer_full;
+    info->playback_likely_to_keep_up = p.likely_to_keep_up;
+    info->ready_to_play = p.ready_to_play;
+}
+
+static float on_video_playlist_remove(void *cls) {
+    gaxo_engine *e = cls;
+    return e->cb.hls_playlist_remove ? e->cb.hls_playlist_remove(e->cb.ctx) : 0.0f;
+}
+
 static void on_display_pin(void *cls, char *pin) {
     gaxo_engine *e = cls;
     if (e->cb.show_pin) e->cb.show_pin(e->cb.ctx, pin);
@@ -156,16 +212,16 @@ static bool parse_device_id(const char *device_id, char hw_addr[6]) {
     return true;
 }
 
-/* Feature bits exactly as uxplay.cpp start_dnssd() sets them, with HLS off,
- * H.265 off, and bit 27 (legacy pairing) on only in PIN mode. */
-static void set_features(dnssd_t *dnssd, bool pin_once) {
+/* Feature bits exactly as uxplay.cpp start_dnssd() sets them: HLS (bits 0, 4)
+ * only with AirPlay video, H.265 off, bit 27 (legacy pairing) only in PIN mode. */
+static void set_features(dnssd_t *dnssd, bool pin_once, bool hls) {
     static const int bits[32] = {
         0, 1, 1, 0,  0, 1, 1, 1,  0, 1, 1, 1,  1, 1, 1, 1,
         1, 1, 1, 1,  1, 1, 1, 0,  0, 1, 0, 1,  1, 0, 1, 0,
     };
     for (int i = 0; i < 32; i++) dnssd_set_airplay_features(dnssd, i, bits[i]);
-    dnssd_set_airplay_features(dnssd, 0, 0);  /* HLS video */
-    dnssd_set_airplay_features(dnssd, 4, 0);  /* HLS */
+    dnssd_set_airplay_features(dnssd, 0, hls ? 1 : 0); /* AirPlay video */
+    dnssd_set_airplay_features(dnssd, 4, hls ? 1 : 0); /* HLS */
     dnssd_set_airplay_features(dnssd, 42, 0); /* screen multi-codec (H.265) */
     dnssd_set_airplay_features(dnssd, 27, pin_once ? 1 : 0);
 }
@@ -196,6 +252,7 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
     e->device_id = dup_or_empty(config->device_id);
     e->keyfile = dup_or_empty(config->keyfile);
     e->advertise = config->advertise;
+    e->hls = config->hls;
     e->volume_db = 0.0f;
 
     char hw_addr[6];
@@ -212,7 +269,7 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
         free_engine(e);
         return GAXO_ERR_DNSSD_INIT;
     }
-    set_features(e->dnssd, config->pin_once);
+    set_features(e->dnssd, config->pin_once, config->hls);
 
     raop_callbacks_t cbs;
     memset(&cbs, 0, sizeof(cbs));
@@ -235,6 +292,12 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
     cbs.display_pin = on_display_pin;
     cbs.video_reset = on_video_reset;
     cbs.video_set_codec = on_video_set_codec;
+    cbs.on_video_play = on_video_play;
+    cbs.on_video_scrub = on_video_scrub;
+    cbs.on_video_rate = on_video_rate;
+    cbs.on_video_stop = on_video_stop;
+    cbs.on_video_acquire_playback_info = on_video_acquire_playback_info;
+    cbs.on_video_playlist_remove = on_video_playlist_remove;
 
     e->raop = raop_init(&cbs);
     if (!e->raop) {
@@ -256,6 +319,7 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
     if (config->height) raop_set_plist(e->raop, "height", config->height);
     if (config->refresh_rate) raop_set_plist(e->raop, "refreshRate", config->refresh_rate);
     if (config->max_fps) raop_set_plist(e->raop, "maxFPS", config->max_fps);
+    if (config->hls) raop_set_plist(e->raop, "hls", 1);
     /* Like `uxplay -pin nnnn`: stored as code + 10000 so the engine keeps it after each attempt. */
     if (config->pin_once && config->fixed_pin >= 0 && config->fixed_pin <= 9999) {
         raop_set_plist(e->raop, "pin", config->fixed_pin + 10000);
@@ -296,6 +360,10 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
 
 uint16_t gaxo_engine_port(const gaxo_engine *engine) {
     return engine ? engine->port : 0;
+}
+
+uint64_t gaxo_engine_features(const gaxo_engine *engine) {
+    return engine ? dnssd_get_airplay_features(engine->dnssd) : 0;
 }
 
 void gaxo_engine_drop_clients(gaxo_engine *engine) {

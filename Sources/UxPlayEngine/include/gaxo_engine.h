@@ -26,6 +26,15 @@ enum {
     GAXO_ERR_REGISTER = -4,
 };
 
+/* AirPlay video playback state reported to the iPhone (GET /playback-info).
+ * position -1 = not ready yet; duration -1 = finished. */
+typedef struct {
+    double duration, position;
+    float rate;
+    double seek_start, seek_duration;
+    bool buffer_empty, buffer_full, likely_to_keep_up, ready_to_play;
+} gaxo_hls_playback;
+
 typedef struct {
     const char *name;        /* name shown on the iPhone */
     const char *device_id;   /* "02:AB:CD:EF:01:23" — locally administered MAC */
@@ -36,6 +45,7 @@ typedef struct {
     bool advertise;          /* register _airplay._tcp / _raop._tcp with Bonjour */
     int log_level;           /* UxPlay LOGGER_* level, 0..8 */
     int fixed_pin;           /* with pin_once: 0..9999 = always this code; -1 = random each time */
+    bool hls;                /* AirPlay video (UxPlay -hls): YouTube may send its video as HLS */
 } gaxo_engine_config;
 
 /* Every pointer may be NULL. All callbacks run on engine threads. */
@@ -56,6 +66,14 @@ typedef struct {
     void (*audio_flush)(void *ctx);
     void (*volume)(void *ctx, float db);
     void (*show_pin)(void *ctx, const char *pin);
+    /* AirPlay video (only with config.hls) */
+    void (*hls_play)(void *ctx, const char *url, float start_position);
+    void (*hls_scrub)(void *ctx, float position);
+    void (*hls_rate)(void *ctx, float rate);
+    void (*hls_stop)(void *ctx);
+    void (*hls_ended)(void *ctx);
+    void (*hls_playback)(void *ctx, gaxo_hls_playback *out);
+    float (*hls_playlist_remove)(void *ctx);
 } gaxo_engine_callbacks;
 
 /* Starts the engine. On success *out is set and GAXO_OK returned; otherwise
@@ -66,6 +84,9 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
 
 /* The TCP port the engine listens on. */
 uint16_t gaxo_engine_port(const gaxo_engine *engine);
+
+/* The AirPlay feature bits being advertised. */
+uint64_t gaxo_engine_features(const gaxo_engine *engine);
 
 /* Drops every connected client and restarts the listener on the same port. */
 void gaxo_engine_drop_clients(gaxo_engine *engine);

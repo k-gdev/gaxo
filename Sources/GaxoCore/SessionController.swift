@@ -21,6 +21,8 @@ public enum SessionState: Equatable {
     case mirroring(ClientInfo)
     /// Code mode: the iPhone is asking for this 4-digit code.
     case awaitingCode(String)
+    /// AirPlay video (YouTube) is playing in Gaxo.
+    case playingVideo
     case failed(EngineError)
 }
 
@@ -44,6 +46,7 @@ public protocol MediaSink: AnyObject {
 /// callback, because the engine joins its own threads while doing it.
 public final class SessionController: EngineDelegate {
     public weak var media: MediaSink?
+    public weak var videoPlayer: VideoPlaybackSink?
     /// Delivered on the main queue.
     public var onStateChange: ((SessionState) -> Void)?
 
@@ -62,6 +65,7 @@ public final class SessionController: EngineDelegate {
     private var openConnections = 0
     private var lastHeardFrom: TimeInterval = 0
     private var codeShownAt: TimeInterval?
+    private var videoActive = false
     /// How long a pairing code stays up if the iPhone never comes back with it.
     private let codeTimeout: TimeInterval = 60
 
@@ -182,6 +186,7 @@ public final class SessionController: EngineDelegate {
     }
 
     private func stopNow() {
+        stopVideoIfActive()
         let engine = lock.withLock { () -> EngineProtocol? in
             let e = self.engine
             self.engine = nil
@@ -193,6 +198,7 @@ public final class SessionController: EngineDelegate {
     }
 
     private func dropNow() {
+        stopVideoIfActive()
         let engine = lock.withLock { self.engine }
         engine?.dropClients()
         endSession()
@@ -212,6 +218,7 @@ public final class SessionController: EngineDelegate {
             let active = client != nil
             endSessionLocked()
             if keepingCode, case .awaitingCode = _state { return false }
+            if videoActive { return false } // the mirror stream may stop while a video plays
             codeShownAt = nil
             return active || _state != .ready
         }
@@ -322,8 +329,63 @@ public final class SessionController: EngineDelegate {
     private func markMirroring() {
         guard let client = lock.withLock({ () -> ClientInfo? in
             codeShownAt = nil
-            return self.client
+            return videoActive ? nil : self.client
         }) else { return }
         setState(.mirroring(client))
+    }
+
+    // MARK: - AirPlay video (YouTube)
+
+    public func engineVideoPlay(url: String, startPosition: Float) {
+        Log.info("AirPlay video: play \(url) from \(startPosition) s")
+        lock.withLock { videoActive = true }
+        videoPlayer?.play(url: url, startPosition: startPosition)
+        setState(.playingVideo)
+    }
+
+    public func engineVideoSeek(to position: Float) {
+        videoPlayer?.seek(to: position)
+    }
+
+    public func engineVideoRate(_ rate: Float) {
+        videoPlayer?.setRate(rate)
+    }
+
+    /// The iPhone stopped the video (POST /stop).
+    public func engineVideoStop() {
+        Log.info("AirPlay video: stopped by the iPhone")
+        finishVideo()
+    }
+
+    /// The engine ended the AirPlay video session (finished, or torn down).
+    public func engineVideoEnded() {
+        Log.info("AirPlay video: session ended")
+        finishVideo()
+    }
+
+    public func engineVideoPlaybackInfo() -> PlaybackSnapshot {
+        videoPlayer?.currentPlayback() ?? .notReady
+    }
+
+    public func engineVideoPlaylistRemoved() -> Float {
+        videoPlayer?.pauseForPlaylistChange() ?? 0
+    }
+
+    private func finishVideo() {
+        let (wasActive, client) = lock.withLock { () -> (Bool, ClientInfo?) in
+            defer { videoActive = false }
+            return (videoActive, self.client)
+        }
+        guard wasActive else { return }
+        videoPlayer?.stop()
+        setState(client.map { .mirroring($0) } ?? .ready)
+    }
+
+    private func stopVideoIfActive() {
+        let wasActive = lock.withLock { () -> Bool in
+            defer { videoActive = false }
+            return videoActive
+        }
+        if wasActive { videoPlayer?.stop() }
     }
 }

@@ -26,6 +26,25 @@ public protocol EngineDelegate: AnyObject {
     func engineVolume(db: Float)
     func engineShowPIN(_ pin: String)
     func engineLog(level: Int32, _ message: String)
+
+    // AirPlay video (YouTube HLS); default implementations do nothing.
+    func engineVideoPlay(url: String, startPosition: Float)
+    func engineVideoSeek(to position: Float)
+    func engineVideoRate(_ rate: Float)
+    func engineVideoStop()
+    func engineVideoEnded()
+    func engineVideoPlaybackInfo() -> PlaybackSnapshot
+    func engineVideoPlaylistRemoved() -> Float
+}
+
+public extension EngineDelegate {
+    func engineVideoPlay(url: String, startPosition: Float) {}
+    func engineVideoSeek(to position: Float) {}
+    func engineVideoRate(_ rate: Float) {}
+    func engineVideoStop() {}
+    func engineVideoEnded() {}
+    func engineVideoPlaybackInfo() -> PlaybackSnapshot { .notReady }
+    func engineVideoPlaylistRemoved() -> Float { 0 }
 }
 
 public protocol EngineProtocol: AnyObject {
@@ -56,6 +75,11 @@ public final class Engine: EngineProtocol {
         gaxo_engine_port(handle)
     }
 
+    /// The AirPlay feature bits advertised over Bonjour and in GET /info.
+    public var advertisedFeatures: UInt64 {
+        gaxo_engine_features(handle)
+    }
+
     public func start() throws {
         precondition(handle == nil, "engine already started")
         try? FileManager.default.createDirectory(
@@ -82,6 +106,7 @@ public final class Engine: EngineProtocol {
                     c.advertise = config.advertise
                     c.log_level = config.logLevel
                     c.fixed_pin = config.fixedPIN.map { Int32($0) } ?? -1
+                    c.hls = config.airPlayVideo
                     return gaxo_engine_start(&c, &callbacks, &out)
                 }
             }
@@ -156,6 +181,25 @@ public final class Engine: EngineProtocol {
         cb.audio_flush = { ctx in delegate(ctx)?.engineAudioFlush() }
         cb.volume = { ctx, db in delegate(ctx)?.engineVolume(db: db) }
         cb.show_pin = { ctx, pin in delegate(ctx)?.engineShowPIN(string(pin)) }
+        cb.hls_play = { ctx, url, start in delegate(ctx)?.engineVideoPlay(url: string(url), startPosition: start) }
+        cb.hls_scrub = { ctx, position in delegate(ctx)?.engineVideoSeek(to: position) }
+        cb.hls_rate = { ctx, rate in delegate(ctx)?.engineVideoRate(rate) }
+        cb.hls_stop = { ctx in delegate(ctx)?.engineVideoStop() }
+        cb.hls_ended = { ctx in delegate(ctx)?.engineVideoEnded() }
+        cb.hls_playlist_remove = { ctx in delegate(ctx)?.engineVideoPlaylistRemoved() ?? 0 }
+        cb.hls_playback = { ctx, out in
+            guard let out else { return }
+            let s = delegate(ctx)?.engineVideoPlaybackInfo() ?? .notReady
+            out.pointee.duration = s.duration
+            out.pointee.position = s.position
+            out.pointee.rate = s.rate
+            out.pointee.seek_start = s.seekStart
+            out.pointee.seek_duration = s.seekDuration
+            out.pointee.buffer_empty = s.bufferEmpty
+            out.pointee.buffer_full = s.bufferFull
+            out.pointee.likely_to_keep_up = s.likelyToKeepUp
+            out.pointee.ready_to_play = s.readyToPlay
+        }
         return cb
     }()
 }
