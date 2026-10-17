@@ -136,7 +136,18 @@ private final class Harness {
         h.startMirroring(Harness.phoneA)
         h.session.engineVideoStopped()
         #expect(h.session.state == .ready)
-        #expect(h.request(Harness.phoneB), "another phone may connect once the session ended")
+        #expect(!h.request(Harness.phoneB), "phone A's connection is still open")
+        h.session.engineConnectionClosed()
+        #expect(h.request(Harness.phoneB), "another phone may connect once A's connection closed")
+    }
+
+    /// iOS can resume mirroring on the same connection after stopping the stream.
+    @Test func mirroringResumesOnTheSameConnection() {
+        let h = Harness()
+        h.startMirroring(Harness.phoneA)
+        h.session.engineVideoStopped()
+        h.session.engineVideoSize(source: CGSize(width: 498, height: 1080), size: CGSize(width: 498, height: 1080))
+        #expect(h.session.state == .mirroring(Harness.phoneA))
     }
 
     @Test func connectionLostReturnsToReady() {

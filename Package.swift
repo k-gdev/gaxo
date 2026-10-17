@@ -56,6 +56,7 @@ let package = Package(
         .executableTarget(name: "gaxo-probe", dependencies: ["GaxoCore"]),
         .executableTarget(name: "Gaxo", dependencies: ["GaxoCore"]),
         .testTarget(name: "GaxoCoreTests", dependencies: ["GaxoCore", "UxPlayEngine"]),
+        .testTarget(name: "GaxoAppTests", dependencies: ["Gaxo", "GaxoCore"]),
     ],
     swiftLanguageModes: [.v5]
 )

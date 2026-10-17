@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import GaxoCore
@@ -40,7 +41,43 @@ import Testing
         defer { first.stop() }
 
         let second = Engine(config: config(port: base))
-        #expect(throws: EngineError.portInUse(base)) { try second.start() }
+        #expect(throws: EngineError.portInUse(base + 1), "the RTSP port is the one that clashes") {
+            try second.start()
+        }
+    }
+
+    /// Holds a port like another app would.
+    private func occupy(_ type: Int32, _ port: UInt16) throws -> Int32 {
+        let fd = socket(AF_INET, type, 0)
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = INADDR_ANY
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        if bound != 0 { throw POSIXError(.EADDRINUSE) }
+        if type == SOCK_STREAM { listen(fd, 1) }
+        return fd
+    }
+
+    /// TCP base (mirror data) and the UDP ports are only bound when an iPhone connects;
+    /// a clash must still be reported at start, not fail silently later.
+    @Test func tcpMirrorPortTakenByAnotherAppIsReported() throws {
+        let base = UInt16.random(in: 40_000...59_990)
+        let held = try occupy(SOCK_STREAM, base)
+        defer { close(held) }
+        #expect(throws: EngineError.portInUse(base)) { try Engine(config: config(port: base)).start() }
+    }
+
+    @Test func udpPortTakenByAnotherAppIsReported() throws {
+        let base = UInt16.random(in: 40_000...59_990)
+        let held = try occupy(SOCK_DGRAM, base + 2)
+        defer { close(held) }
+        #expect(throws: EngineError.portInUse(base + 2)) { try Engine(config: config(port: base)).start() }
     }
 
     @Test func keyIsReusedAcrossRestarts() throws {

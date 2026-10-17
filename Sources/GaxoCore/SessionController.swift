@@ -66,6 +66,8 @@ public final class SessionController: EngineDelegate {
     private var lastHeardFrom: TimeInterval = 0
     private var codeShownAt: TimeInterval?
     private var videoActive = false
+    /// Mirror frames are flowing (the session itself can outlive the stream).
+    private var mirrorStreamActive = false
     /// How long a pairing code stays up if the iPhone never comes back with it.
     private let codeTimeout: TimeInterval = 60
 
@@ -156,7 +158,7 @@ public final class SessionController: EngineDelegate {
         }
 
         let silent = lock.withLock {
-            client != nil && clock() - lastHeardFrom > silenceLimit
+            (client != nil || videoActive) && clock() - lastHeardFrom > silenceLimit
         }
         if silent {
             Log.info("No word from the iPhone for \(Int(silenceLimit)) s; ending the session")
@@ -209,6 +211,7 @@ public final class SessionController: EngineDelegate {
     private func endSessionLocked() {
         client = nil
         openConnections = 0
+        mirrorStreamActive = false
     }
 
     /// `keepingCode`: a connection closing does not take a pairing code off screen —
@@ -278,10 +281,21 @@ public final class SessionController: EngineDelegate {
         lock.withLock { lastHeardFrom = clock() }
     }
 
+    /// The mirror stream stopped. While the phone's connection stays open the session
+    /// continues (iOS may resume mirroring or play an AirPlay video on it); it ends when
+    /// the last connection closes, the watchdog fires, or the user disconnects.
     public func engineVideoStopped() {
         Log.info("The iPhone stopped mirroring")
         media?.videoFlush()
-        endSession()
+        let (sessionContinues, playingVideo) = lock.withLock { () -> (Bool, Bool) in
+            mirrorStreamActive = false
+            return (client != nil && openConnections > 0, videoActive)
+        }
+        if !sessionContinues {
+            endSession()
+        } else if !playingVideo {
+            setState(.ready)
+        }
     }
 
     public func engineVideoFrame(_ annexB: UnsafeRawBufferPointer, ntpNanos: UInt64) {
@@ -329,6 +343,7 @@ public final class SessionController: EngineDelegate {
     private func markMirroring() {
         guard let client = lock.withLock({ () -> ClientInfo? in
             codeShownAt = nil
+            if self.client != nil { mirrorStreamActive = true }
             return videoActive ? nil : self.client
         }) else { return }
         setState(.mirroring(client))
@@ -338,7 +353,10 @@ public final class SessionController: EngineDelegate {
 
     public func engineVideoPlay(url: String, startPosition: Float) {
         Log.info("AirPlay video: play \(url) from \(startPosition) s")
-        lock.withLock { videoActive = true }
+        lock.withLock {
+            videoActive = true
+            lastHeardFrom = clock()
+        }
         videoPlayer?.play(url: url, startPosition: startPosition)
         setState(.playingVideo)
     }
@@ -363,8 +381,11 @@ public final class SessionController: EngineDelegate {
         finishVideo()
     }
 
+    /// The iPhone polls this about once a second during a video: it also counts as
+    /// hearing from the phone (the watchdog keeps running during videos).
     public func engineVideoPlaybackInfo() -> PlaybackSnapshot {
-        videoPlayer?.currentPlayback() ?? .notReady
+        lock.withLock { lastHeardFrom = clock() }
+        return videoPlayer?.currentPlayback() ?? .notReady
     }
 
     public func engineVideoPlaylistRemoved() -> Float {
@@ -372,13 +393,13 @@ public final class SessionController: EngineDelegate {
     }
 
     private func finishVideo() {
-        let (wasActive, client) = lock.withLock { () -> (Bool, ClientInfo?) in
+        let (wasActive, mirroringClient) = lock.withLock { () -> (Bool, ClientInfo?) in
             defer { videoActive = false }
-            return (videoActive, self.client)
+            return (videoActive, mirrorStreamActive ? self.client : nil)
         }
         guard wasActive else { return }
         videoPlayer?.stop()
-        setState(client.map { .mirroring($0) } ?? .ready)
+        setState(mirroringClient.map { .mirroring($0) } ?? .ready)
     }
 
     private func stopVideoIfActive() {

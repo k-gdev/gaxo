@@ -90,6 +90,7 @@ public final class Engine: EngineProtocol {
         callbacks.ctx = unmanaged.toOpaque()
 
         var out: OpaquePointer?
+        var conflictPort: UInt16 = 0
         let result = config.name.withCString { name in
             config.deviceID.withCString { deviceID in
                 config.keyfile.path.withCString { keyfile in
@@ -107,7 +108,7 @@ public final class Engine: EngineProtocol {
                     c.log_level = config.logLevel
                     c.fixed_pin = config.fixedPIN.map { Int32($0) } ?? -1
                     c.hls = config.airPlayVideo
-                    return gaxo_engine_start(&c, &callbacks, &out)
+                    return gaxo_engine_start(&c, &callbacks, &out, &conflictPort)
                 }
             }
         }
@@ -116,7 +117,7 @@ public final class Engine: EngineProtocol {
             unmanaged.release()
             switch Int(result) {
             case GAXO_ERR_DNSSD_INIT: throw EngineError.dnssdInit
-            case GAXO_ERR_PORT: throw EngineError.portInUse(config.basePort)
+            case GAXO_ERR_PORT: throw EngineError.portInUse(conflictPort != 0 ? conflictPort : config.basePort + 1)
             case GAXO_ERR_REGISTER: throw EngineError.registerFailed
             default: throw EngineError.raopInit
             }

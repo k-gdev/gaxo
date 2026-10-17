@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var accepting = true
     private var showingPhone = false
+    private var pendingSessionEnd: DispatchWorkItem?
     private var statusWindowPolicy = StatusWindowPolicy()
     private var statusItem: StatusItemController!
     private lazy var statusWindow = StatusWindowController(model: statusModel) { [weak self] in
@@ -105,24 +106,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             break
         }
 
-        if state.isShowingPhone, !showingPhone {
-            // Mirroring or an AirPlay video began: the status window steps aside.
-            showingPhone = true
-            if statusWindowPolicy.sessionStarted(windowVisible: statusWindow.window?.isVisible == true) {
-                statusWindow.window?.orderOut(nil)
+        if state.isShowingPhone {
+            pendingSessionEnd?.cancel()
+            pendingSessionEnd = nil
+            if !showingPhone {
+                // Mirroring or an AirPlay video began: the status window steps aside.
+                showingPhone = true
+                if statusWindowPolicy.sessionStarted(windowVisible: statusWindow.window?.isVisible == true) {
+                    statusWindow.window?.orderOut(nil)
+                }
             }
-        } else if showingPhone, state.endsShowingPhone {
-            showingPhone = false
-            media.sessionEnded()
-            if settingsStore.settings.closeWindowWhenMirroringStops {
-                mirror.closeForSessionEnd()
-            } else {
-                mirror.resetVideo()
-            }
-            if statusWindowPolicy.sessionEnded() {
-                statusWindow.showWindow(nil) // without activating Gaxo: no focus stealing
-                updateActivationPolicy()
-            }
+        } else if showingPhone, state.endsShowingPhone, pendingSessionEnd == nil {
+            // A YouTube video starts right after the mirror stream stops: wait a moment,
+            // so the window does not flicker shut and reopen.
+            let work = DispatchWorkItem { [weak self] in self?.endShowingPhone() }
+            pendingSessionEnd = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+        }
+    }
+
+    private func endShowingPhone() {
+        pendingSessionEnd = nil
+        guard showingPhone, session.state.endsShowingPhone else { return }
+        showingPhone = false
+        media.sessionEnded()
+        if settingsStore.settings.closeWindowWhenMirroringStops {
+            mirror.closeForSessionEnd()
+        } else {
+            mirror.resetVideo()
+        }
+        if statusWindowPolicy.sessionEnded() {
+            statusWindow.showWindow(nil) // without activating Gaxo: no focus stealing
+            updateActivationPolicy()
         }
     }
 

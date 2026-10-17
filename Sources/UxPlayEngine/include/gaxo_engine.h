@@ -78,9 +78,9 @@ typedef struct {
 
 /* Starts the engine. On success *out is set and GAXO_OK returned; otherwise
  * *out is NULL and one of the GAXO_ERR_* codes is returned. The config strings
- * are copied. */
+ * are copied. With GAXO_ERR_PORT, *conflict_port (if not NULL) names the port. */
 int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callbacks *callbacks,
-                      gaxo_engine **out);
+                      gaxo_engine **out, uint16_t *conflict_port);
 
 /* The TCP port the engine listens on. */
 uint16_t gaxo_engine_port(const gaxo_engine *engine);

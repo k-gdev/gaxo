@@ -53,7 +53,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate, NSMenu
         window.contentAspectRatio = size
         let visible = contentArea(of: window)
 
-        if !window.isVisible || previous == nil {
+        if !window.isVisible { // first open; a window left open keeps its place and size
             var content = CGRect(origin: .zero, size: WindowSizing.initialContentSize(video: size, visible: visible))
             let centre = lastCentre ?? CGPoint(x: visible.midX, y: visible.midY)
             content.origin = CGPoint(x: centre.x - content.width / 2, y: centre.y - content.height / 2)

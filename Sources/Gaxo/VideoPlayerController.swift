@@ -74,10 +74,13 @@ final class VideoPlayerController: VideoPlaybackSink {
         finished = false
 
         observations = [
-            item.observe(\.status) { item, _ in
-                if item.status == .failed {
-                    Log.error("AirPlay video failed: \(item.error.map { String(describing: $0) } ?? "unknown error")")
-                }
+            item.observe(\.status) { [weak self] item, _ in
+                guard item.status == .failed, let self else { return }
+                Log.error("AirPlay video failed: \(item.error.map { String(describing: $0) } ?? "unknown error")")
+                // Report it as finished: the engine then ends the session instead of the
+                // iPhone waiting forever.
+                lock.withLock { self.snapshot = .finished }
+                DispatchQueue.main.async { self.finished = true }
             },
             item.observe(\.presentationSize) { [weak self] item, _ in
                 let size = item.presentationSize
@@ -105,6 +108,11 @@ final class VideoPlayerController: VideoPlaybackSink {
 
     private func updateSnapshot() {
         guard !finished, let player, let item = player.currentItem else { return }
+        if item.status == .failed || lock.withLock({ snapshot == .finished }) {
+            finished = true // failed or ended: keep reporting .finished so the engine ends it
+            lock.withLock { snapshot = .finished }
+            return
+        }
         let ready = item.status == .readyToPlay
         let duration = item.duration.seconds.isFinite ? item.duration.seconds : 0
         let seekable = item.seekableTimeRanges.first?.timeRangeValue

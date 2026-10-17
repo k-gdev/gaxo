@@ -28,9 +28,13 @@ private final class StubEngine: EngineProtocol {
 }
 
 @Suite struct AirPlayVideoSessionTests {
+    private final class Clock { var now: TimeInterval = 1_000 }
+    private let clock = Clock()
+
     private func makeSession() -> (SessionController, RecordingPlayer, StubEngine) {
         let engine = StubEngine()
-        let session = SessionController(makeEngine: { _ in engine }, clock: { 0 }, timerInterval: nil,
+        let clock = self.clock
+        let session = SessionController(makeEngine: { _ in engine }, clock: { clock.now }, timerInterval: nil,
                                         executor: { $0() })
         let player = RecordingPlayer()
         session.videoPlayer = player
@@ -60,20 +64,46 @@ private final class StubEngine: EngineProtocol {
         #expect(session.state == .playingVideo)
     }
 
-    @Test func videoEndingReturnsToMirroringOrReady() {
-        let (session, player, _) = makeSession()
+    private let phone = ClientInfo(deviceID: "FE", model: "iPhone18,2", name: "Phone")
+
+    private func startMirroring(_ session: SessionController) {
         session.engineConnectionOpened()
-        _ = session.engineClientRequest(deviceID: "FE", model: "iPhone18,2", name: "Phone")
+        _ = session.engineClientRequest(deviceID: phone.deviceID, model: phone.model, name: phone.name)
         session.engineVideoSize(source: CGSize(width: 498, height: 1080), size: CGSize(width: 498, height: 1080))
+    }
+
+    /// What the engine really sends: the mirror stream stops (RTP teardown), then the video plays.
+    @Test func videoEndingAfterTheMirrorStreamStoppedWaitsForMirroringToResume() {
+        let (session, player, _) = makeSession()
+        startMirroring(session)
+        session.engineVideoStopped()
         session.engineVideoPlay(url: "http://localhost:7101/master.m3u8", startPosition: 0)
         session.engineVideoEnded()
         #expect(player.stops == 1)
-        #expect(session.state == .mirroring(ClientInfo(deviceID: "FE", model: "iPhone18,2", name: "Phone")))
+        #expect(session.state == .ready)
+        session.engineVideoSize(source: CGSize(width: 498, height: 1080), size: CGSize(width: 498, height: 1080))
+        #expect(session.state == .mirroring(phone), "the same phone resumes on the same connection")
+    }
+
+    @Test func videoEndingWhileStillMirroringReturnsToMirroring() {
+        let (session, _, _) = makeSession()
+        startMirroring(session)
+        session.engineVideoPlay(url: "http://localhost:7101/master.m3u8", startPosition: 0)
+        session.engineVideoEnded()
+        #expect(session.state == .mirroring(phone))
 
         let (alone, _, _) = makeSession()
         alone.engineVideoPlay(url: "http://localhost:7101/master.m3u8", startPosition: 0)
         alone.engineVideoEnded()
         #expect(alone.state == .ready)
+    }
+
+    @Test func secondPhoneIsRefusedDuringAVideo() {
+        let (session, _, _) = makeSession()
+        startMirroring(session)
+        session.engineVideoStopped()
+        session.engineVideoPlay(url: "http://localhost:7101/master.m3u8", startPosition: 0)
+        #expect(!session.engineClientRequest(deviceID: "BB", model: "iPhone16,2", name: "Other"))
     }
 
     @Test func iPhoneControlsReachThePlayer() {
@@ -96,6 +126,30 @@ private final class StubEngine: EngineProtocol {
                                            bufferEmpty: false, bufferFull: true, likelyToKeepUp: true,
                                            readyToPlay: true)
         #expect(session.engineVideoPlaybackInfo() == player.snapshot)
+    }
+
+    /// The phone drops off Wi-Fi mid-video: after 15 s without a playback poll the session ends.
+    @Test func watchdogEndsASilentVideo() {
+        let (session, player, engine) = makeSession()
+        session.engineVideoPlay(url: "http://localhost:7101/master.m3u8", startPosition: 0)
+        clock.now += 16
+        session.tick()
+        #expect(engine.dropped == 1)
+        #expect(player.stops == 1)
+        #expect(session.state == .ready)
+    }
+
+    /// During a video the iPhone polls playback info about once a second: that keeps it alive.
+    @Test func playbackPollsKeepAVideoAlive() {
+        let (session, _, engine) = makeSession()
+        session.engineVideoPlay(url: "http://localhost:7101/master.m3u8", startPosition: 0)
+        for _ in 0..<30 {
+            clock.now += 1
+            _ = session.engineVideoPlaybackInfo()
+            session.tick()
+        }
+        #expect(engine.dropped == 0)
+        #expect(session.state == .playingVideo)
     }
 
     @Test func disconnectStopsTheVideo() {

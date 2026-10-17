@@ -16,19 +16,21 @@ final class MediaRouter: MediaSink {
     private var receivedBytes = 0
     private var pictureFingerprints = Set<UInt64>()
     private var lastReport = ProcessInfo.processInfo.systemUptime
-    private lazy var videoDecoder = VideoDecoder { [weak self] pixelBuffer, _ in
-        guard let self else { return }
-        let fingerprint = Self.fingerprint(pixelBuffer)
-        lock.withLock {
-            self.decodedCount += 1
-            self.pictureFingerprints.insert(fingerprint)
-        }
-        mirror.videoView.display(pixelBuffer)
-    }
+    /// Created in init, not lazily: engine threads (mirror and httpd) may reach it at once.
+    private var videoDecoder: VideoDecoder!
 
     init(mirror: MirrorWindowController, audioPlayer: AudioPlayer) {
         self.mirror = mirror
         self.audioPlayer = audioPlayer
+        videoDecoder = VideoDecoder { [weak self] pixelBuffer, _ in
+            guard let self else { return }
+            let fingerprint = Self.fingerprint(pixelBuffer)
+            lock.withLock {
+                self.decodedCount += 1
+                self.pictureFingerprints.insert(fingerprint)
+            }
+            mirror.videoView.display(pixelBuffer)
+        }
     }
 
     var playSound: Bool {
@@ -114,9 +116,9 @@ final class MediaRouter: MediaSink {
         let decoder = try? AudioDecoder(codec: codec)
         if decoder == nil { Log.error("Unsupported audio format ct=\(codec)") }
         lock.withLock { audioDecoder = decoder }
-        if audioPlayer.enabled {
-            do { try audioPlayer.start() } catch { Log.error("Could not start audio: \(error)") }
-        }
+        // Start even with sound off (buffers are then discarded), so turning sound on
+        // in Settings takes effect immediately.
+        do { try audioPlayer.start() } catch { Log.error("Could not start audio: \(error)") }
     }
 
     func audioFrame(_ data: UnsafeRawBufferPointer, codec: UInt8, ntpNanos: UInt64) {

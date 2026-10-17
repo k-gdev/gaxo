@@ -8,9 +8,13 @@
  */
 #include "gaxo_engine.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "dnssd.h"
 #include "logger.h"
@@ -226,6 +230,37 @@ static void set_features(dnssd_t *dnssd, bool pin_once, bool hls) {
     dnssd_set_airplay_features(dnssd, 27, pin_once ? 1 : 0);
 }
 
+/* True if `port` can be bound right now (same options the engine uses later). */
+static bool port_is_free(int type, unsigned short port) {
+    int fd = socket(AF_INET, type, 0);
+    if (fd < 0) return true; /* cannot tell: let the engine try */
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bool free = bind(fd, (struct sockaddr *) &addr, sizeof(addr)) == 0;
+    close(fd);
+    return free;
+}
+
+/* The engine binds TCP base+1 at start, but TCP base and UDP base..base+2 only
+ * when an iPhone connects: check them all now, so a clash is reported at start
+ * instead of the iPhone failing silently later. Returns the first busy port, or 0. */
+static unsigned short first_busy_port(unsigned short base) {
+    if (!base) return 0;
+    for (int i = 0; i < 2; i++) {
+        if (!port_is_free(SOCK_STREAM, (unsigned short) (base + i))) return (unsigned short) (base + i);
+    }
+    for (int i = 0; i < 3; i++) {
+        if (!port_is_free(SOCK_DGRAM, (unsigned short) (base + i))) return (unsigned short) (base + i);
+    }
+    return 0;
+}
+
 static char *dup_or_empty(const char *s) {
     return strdup(s ? s : "");
 }
@@ -243,8 +278,14 @@ static void free_engine(gaxo_engine *e) {
 /* ---- public API ---- */
 
 int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callbacks *callbacks,
-                      gaxo_engine **out) {
+                      gaxo_engine **out, uint16_t *conflict_port) {
     *out = NULL;
+    if (conflict_port) *conflict_port = 0;
+    unsigned short busy = first_busy_port(config->base_port);
+    if (busy) {
+        if (conflict_port) *conflict_port = busy;
+        return GAXO_ERR_PORT;
+    }
     gaxo_engine *e = calloc(1, sizeof(*e));
     if (!e) return GAXO_ERR_RAOP_INIT;
     if (callbacks) e->cb = *callbacks;
@@ -338,6 +379,7 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
 
     e->port = raop_get_port(e->raop);
     if (raop_start_httpd(e->raop, &e->port) < 0) {
+        if (conflict_port) *conflict_port = e->port;
         free_engine(e);
         return GAXO_ERR_PORT;
     }
