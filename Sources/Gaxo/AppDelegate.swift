@@ -44,7 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.applicationIconImage = GaxoArt.appIcon(size: 512)
         statusItem = StatusItemController(app: self)
 
-        let settings = settingsStore.settings
+        // "Ask for a code" saved before fixed codes existed gets its code now.
+        let settings = settingsStore.settings.ensuringPairingCode()
+        settingsStore.settings = settings
         statusModel.name = settings.name
         statusItem.update(state: .stopped, name: settings.name, accepting: accepting)
         media.playSound = settings.playSound
