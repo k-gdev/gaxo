@@ -17,10 +17,13 @@ public struct EngineConfig: Equatable {
     public var advertise: Bool
     /// UxPlay `LOGGER_*` level (6 = info, 7 = debug).
     public var logLevel: Int32
+    /// With `pinOnce`: always this code (0…9999). nil = a new random code each time,
+    /// which UxPlay accepts only once (a mistyped entry then locks the iPhone out).
+    public var fixedPIN: UInt16?
 
     public init(name: String, deviceID: String, keyfile: URL, basePort: UInt16,
                 width: UInt16, height: UInt16, refreshRate: UInt16, maxFPS: UInt16,
-                pinOnce: Bool, advertise: Bool, logLevel: Int32) {
+                pinOnce: Bool, advertise: Bool, logLevel: Int32, fixedPIN: UInt16? = nil) {
         self.name = name
         self.deviceID = deviceID
         self.keyfile = keyfile
@@ -32,5 +35,6 @@ public struct EngineConfig: Equatable {
         self.pinOnce = pinOnce
         self.advertise = advertise
         self.logLevel = logLevel
+        self.fixedPIN = fixedPIN
     }
 }

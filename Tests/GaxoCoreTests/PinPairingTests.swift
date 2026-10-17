@@ -24,7 +24,9 @@ private final class LogCapture: EngineDelegate {
     func engineAudioFrame(_ data: UnsafeRawBufferPointer, codec: UInt8, ntpNanos: UInt64) {}
     func engineAudioFlush() {}
     func engineVolume(db: Float) {}
-    func engineShowPIN(_ pin: String) {}
+    private var pins: [String] = []
+    var shownPINs: [String] { lock.withLock { pins } }
+    func engineShowPIN(_ pin: String) { lock.withLock { pins.append(pin) } }
 }
 
 /// A minimal RTSP client over a blocking socket, enough to speak the iPhone's pairing steps.
@@ -116,5 +118,32 @@ private struct RTSPClient {
         let log = capture.all.joined(separator: "\n")
         #expect(!log.contains("client_proof_len 20 invalid"), "20-byte proof rejected by length")
         #expect(log.contains("client proof not validated"), "proof should reach SRP verification (and fail: it is random)")
+    }
+
+    /// A fixed code survives repeated requests (UxPlay's random code is single-use,
+    /// so one mistyped entry locked the iPhone out).
+    @Test func fixedCodeIsUsedEveryTime() throws {
+        let keyfile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("identity.pem")
+        var config = EngineConfig(
+            name: "GaxoPinTest", deviceID: "02:11:22:33:44:77", keyfile: keyfile, basePort: 0,
+            width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
+            pinOnce: true, advertise: false, logLevel: 6)
+        config.fixedPIN = 4821
+        let engine = Engine(config: config)
+        let capture = LogCapture()
+        engine.delegate = capture
+        try engine.start()
+        defer { engine.stop() }
+
+        var client = try RTSPClient(port: engine.port)
+        defer { client.close() }
+        _ = try client.post("/pair-pin-start")
+        _ = try client.post("/pair-setup-pin", plist: ["method": "pin", "user": "FE:C4:42:6E:68:F7"])
+        _ = try client.post("/pair-pin-start")
+        #expect(capture.shownPINs == ["4821", "4821"])
+        let log = capture.all.joined(separator: "\n")
+        #expect(log.contains("ENTER PIN = \"4821\""))
     }
 }

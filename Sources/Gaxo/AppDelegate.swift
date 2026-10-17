@@ -151,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let old = settingsStore.settings
         var new = requested
         new.name = Settings.cleanName(new.name)
+        new = new.ensuringPairingCode()
 
         if old.openAtLogin != new.openAtLogin {
             do {

@@ -103,3 +103,54 @@ import Testing
         #expect(Settings.default.applyingNameDraft(" Gaxo Test ") == expected)
     }
 }
+
+@Suite struct PairingCodeTests {
+    @Test func settingsSavedBeforeCodesExistedStillLoad() throws {
+        let store = SettingsStore(defaults: MemoryPreferences())
+        let old = #"{"name":"Gaxo Test","openAtLogin":false,"showStatusWindowAtLaunch":true,"resolution":"hd1080","frameRate":60,"keepOnTop":true,"closeWindowWhenMirroringStops":true,"playSound":true,"requireCode":true}"#
+        let prefs = MemoryPreferences()
+        prefs.set(Data(old.utf8), forKey: "settings")
+        let loaded = SettingsStore(defaults: prefs).settings
+        #expect(loaded.name == "Gaxo Test")
+        #expect(loaded.keepOnTop)
+        #expect(loaded.pairingCode == nil)
+        _ = store
+    }
+
+    @Test func codeIsAssignedOnceWhenAskingForACode() {
+        var settings = Settings.default
+        settings.requireCode = true
+        let withCode = settings.ensuringPairingCode { 4821 }
+        #expect(withCode.pairingCode == 4821)
+        #expect(withCode.ensuringPairingCode { 1111 }.pairingCode == 4821, "keeps the existing code")
+        #expect(Settings.default.ensuringPairingCode { 4821 }.pairingCode == nil, "no code while the option is off")
+    }
+
+    @Test func engineConfigCarriesTheFixedCode() {
+        let prefs = MemoryPreferences()
+        let store = SettingsStore(defaults: prefs)
+        var settings = Settings.default
+        settings.requireCode = true
+        settings.pairingCode = 4821
+        store.settings = settings
+        let identity = DeviceIdentity(deviceID: "02:11:22:33:44:55")
+        #expect(store.engineConfig(identity: identity).fixedPIN == 4821)
+        settings.requireCode = false
+        store.settings = settings
+        #expect(store.engineConfig(identity: identity).fixedPIN == nil)
+    }
+
+    @Test func newCodeRequiresRestart() {
+        var old = Settings.default
+        old.requireCode = true
+        old.pairingCode = 1111
+        var new = old
+        new.pairingCode = 2222
+        #expect(SettingsStore.requiresEngineRestart(old, new))
+    }
+
+    @Test func codeIsShownWithFourDigits() {
+        #expect(Settings.codeText(7) == "0007")
+        #expect(Settings.codeText(4821) == "4821")
+    }
+}

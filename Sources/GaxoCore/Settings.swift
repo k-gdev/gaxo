@@ -28,6 +28,8 @@ public struct Settings: Codable, Equatable {
     public var closeWindowWhenMirroringStops: Bool
     public var playSound: Bool
     public var requireCode: Bool
+    /// The fixed 4-digit code (0…9999) the iPhone must enter when `requireCode` is on.
+    public var pairingCode: Int?
 
     public static let `default` = Settings(
         name: "Gaxo",
@@ -38,7 +40,20 @@ public struct Settings: Codable, Equatable {
         keepOnTop: false,
         closeWindowWhenMirroringStops: true,
         playSound: true,
-        requireCode: false)
+        requireCode: false,
+        pairingCode: nil)
+
+    /// These settings with a code assigned when one is needed; an existing code is kept.
+    public func ensuringPairingCode(_ random: () -> Int = { Int.random(in: 0...9999) }) -> Settings {
+        guard requireCode, pairingCode == nil else { return self }
+        var settings = self
+        settings.pairingCode = random()
+        return settings
+    }
+
+    public static func codeText(_ code: Int) -> String {
+        String(format: "%04d", code)
+    }
 
     /// The receiver name as shown on the iPhone: trimmed, at most 40 characters and
     /// 50 UTF-8 bytes (Bonjour allows 63 for "<MAC>@<name>"), never empty.
@@ -109,7 +124,8 @@ public final class SettingsStore {
             maxFPS: UInt16(s.frameRate),
             pinOnce: s.requireCode,
             advertise: true,
-            logLevel: logLevel)
+            logLevel: logLevel,
+            fixedPIN: s.requireCode ? s.pairingCode.map { UInt16($0 % 10000) } : nil)
     }
 
     /// Changes the iPhone sees (name, video format, pairing) need an engine restart.
@@ -118,5 +134,6 @@ public final class SettingsStore {
             || old.resolution != new.resolution
             || old.frameRate != new.frameRate
             || old.requireCode != new.requireCode
+            || old.pairingCode != new.pairingCode
     }
 }

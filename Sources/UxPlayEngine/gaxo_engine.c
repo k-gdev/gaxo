@@ -256,6 +256,10 @@ int gaxo_engine_start(const gaxo_engine_config *config, const gaxo_engine_callba
     if (config->height) raop_set_plist(e->raop, "height", config->height);
     if (config->refresh_rate) raop_set_plist(e->raop, "refreshRate", config->refresh_rate);
     if (config->max_fps) raop_set_plist(e->raop, "maxFPS", config->max_fps);
+    /* Like `uxplay -pin nnnn`: stored as code + 10000 so the engine keeps it after each attempt. */
+    if (config->pin_once && config->fixed_pin >= 0 && config->fixed_pin <= 9999) {
+        raop_set_plist(e->raop, "pin", config->fixed_pin + 10000);
+    }
 
     /* Same mapping as `uxplay -p <base>`: TCP/UDP base, base+1, base+2.
      * TCP base = mirror data, base+1 = RTSP/HTTP. 0 = dynamic. */

@@ -81,6 +81,7 @@ public final class Engine: EngineProtocol {
                     c.pin_once = config.pinOnce
                     c.advertise = config.advertise
                     c.log_level = config.logLevel
+                    c.fixed_pin = config.fixedPIN.map { Int32($0) } ?? -1
                     return gaxo_engine_start(&c, &callbacks, &out)
                 }
             }

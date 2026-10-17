@@ -35,6 +35,7 @@ typedef struct {
     bool pin_once;           /* UxPlay -pin mode: 4-digit code on first connection */
     bool advertise;          /* register _airplay._tcp / _raop._tcp with Bonjour */
     int log_level;           /* UxPlay LOGGER_* level, 0..8 */
+    int fixed_pin;           /* with pin_once: 0..9999 = always this code; -1 = random each time */
 } gaxo_engine_config;
 
 /* Every pointer may be NULL. All callbacks run on engine threads. */

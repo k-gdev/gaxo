@@ -67,8 +67,22 @@ struct SettingsView: View {
                 Toggle(isOn: binding(\.requireCode)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Ask for a code before mirroring")
-                        Text("A 4-digit code appears on this Mac the first time a device connects; you type it on the iPhone")
+                        Text("The iPhone asks for this code the first time it connects; it also appears on this Mac")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if model.settings.requireCode, let code = model.settings.pairingCode {
+                    LabeledContent("Code") {
+                        HStack(spacing: 12) {
+                            Text(GaxoCore.Settings.codeText(code))
+                                .font(.system(.title3, design: .rounded).monospacedDigit())
+                                .textSelection(.enabled)
+                            Button("New Code") {
+                                var settings = model.settings
+                                settings.pairingCode = Int.random(in: 0...9999)
+                                apply(settings)
+                            }
+                        }
                     }
                 }
             } header: {
