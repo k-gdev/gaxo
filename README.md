@@ -95,7 +95,7 @@ Enter Full Screen (⌃⌘F).
 
 | Path | What |
 |---|---|
-| `Sources/UxPlayLib/uxplay` | UxPlay v1.73.7 `lib/`, **unmodified** (see `Sources/UxPlayLib/UPSTREAM.md`; `Patches/` is empty) |
+| `Sources/UxPlayLib/uxplay` | UxPlay v1.73.7 `lib/` plus one documented patch (PIN pairing with iOS 26; see `Patches/README.md` and `Sources/UxPlayLib/UPSTREAM.md`) |
 | `Sources/UxPlayEngine` | C shim doing what `uxplay.cpp` does around the library: Bonjour, feature bits, server lifecycle, callbacks |
 | `Sources/GaxoCore` | Swift: engine wrapper, session rules (one phone at a time, 15 s silence watchdog), H.264 → VideoToolbox, audio → AudioToolbox, settings |
 | `Sources/Gaxo` | The app: menu bar item, status window, mirror window, Settings |

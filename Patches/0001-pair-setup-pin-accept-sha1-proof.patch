@@ -1,0 +1,23 @@
+diff --git a/Sources/UxPlayLib/uxplay/raop_handlers.h b/Sources/UxPlayLib/uxplay/raop_handlers.h
+index 5037e68..2d5c5ce 100644
+--- a/Sources/UxPlayLib/uxplay/raop_handlers.h
++++ b/Sources/UxPlayLib/uxplay/raop_handlers.h
+@@ -358,7 +358,8 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+         uint64_t client_proof_len = 0;
+         plist_get_data_val(req_pk_node, &client_pk, &client_pk_len); 
+         plist_get_data_val(req_proof_node, &client_proof, &client_proof_len);
+-        if (client_proof_len != sizeof(proof)) {
++        /* Gaxo patch 0001: SRP here is SHA-1, so iOS sends a 20-byte proof; accept 1..64 bytes */
++        if (client_proof_len == 0 || client_proof_len > sizeof(proof)) {
+             logger_log(raop->logger, LOGGER_ERR, "Client Authentication Failure (client_proof_len %d invalid)", (int) client_proof_len);
+             goto authentication_failed;
+         }
+@@ -367,7 +368,7 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+             logger_log(raop->logger, LOGGER_DEBUG, "client SRP6a proof <M> :\n%s", str);	    
+             free (str);
+         }
+-        memcpy(proof, client_proof, sizeof(proof));
++        memcpy(proof, client_proof, client_proof_len); /* Gaxo patch 0001: copy only what was sent */
+         free (client_proof);
+         int ret = srp_validate_proof(conn->session, raop->pairing, (const unsigned char *) client_pk,
+                                      (int) client_pk_len, proof, (int) client_proof_len, (int) sizeof(proof));

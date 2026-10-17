@@ -10,8 +10,9 @@
   (LGPL-2.1 for the RPiPlay/shairplay-derived files, MIT for llhttp, see
   `uxplay/playfair/LICENSE.md` for playfair).
 
-Do not edit files under `uxplay/`. Any needed change goes in `/Patches` with a
-note explaining why, so the engine can be updated from upstream.
+Applied on top of v1.73.7: the patches listed in `/Patches/README.md` (each a
+`git diff` against the upstream file). Do not edit files under `uxplay/` without
+adding a patch file and a note there, so the engine can be updated from upstream.
 
 To update: replace `uxplay/` with a newer `lib/`, update this file, rebuild,
 run `swift test`.
