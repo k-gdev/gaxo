@@ -9,9 +9,13 @@ cd "$(dirname "$0")/.."
 SIGN_ID="${GAXO_SIGN_ID:-$(security find-identity -v -p codesigning \
     | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -1)}"
 SIGN_ID="${SIGN_ID:--}"
-APP="build/Gaxo.app"
+APP="${GAXO_APP:-build/Gaxo.app}"
+case "$APP" in
+    build/*.app) ;;
+    *) echo "error: GAXO_APP must be build/<name>.app" >&2; exit 1 ;;
+esac
 MARKER="Contents/Resources/gaxo-build-marker"
-ICONSET="build/.AppIcon.iconset"
+ICONSET="build/.AppIcon-$$.iconset"
 
 swift build -c release --product Gaxo
 BIN="$(swift build -c release --product Gaxo --show-bin-path)/Gaxo"
@@ -27,6 +31,7 @@ fi
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Gaxo"
+strip -S "$APP/Contents/MacOS/Gaxo" # drop debug info: it names folders on the build machine
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 

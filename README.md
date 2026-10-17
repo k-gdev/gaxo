@@ -20,14 +20,29 @@ Tested with an iPhone 17 (iPhone18,2) on iOS 26.6.1, Mac on macOS 26.5:
 | Closing the window disconnects the iPhone; stopping on the iPhone returns Gaxo to Ready | |
 | Menu bar icon + status window; Dock icon only while a Gaxo window is open | |
 | Settings: name, resolution, frame rate, keep on top, close when mirroring stops, sound | renaming restarts the receiver under the new name |
+| Take Screenshot (⇧⌘S) | saved to the Desktop, never overwriting a file |
+| Optional 4-digit code | fixed code shown in Settings; works with iOS 26 (needs UxPlay patch 0001) |
 
-Not verified yet: the 4-digit code, Open at login and Take Screenshot with a
-phone, and the installed, signed app's first-launch prompts.
+New in 0.1.0, **not yet verified with a phone**: playing YouTube videos through
+AirPlay video (YouTube sends its video separately; without this, mirroring shows a
+still picture). Also unverified: Open at login, and the iPhone remembering the code
+after Gaxo restarts.
 
-Not supported (by design, for now): casting videos from apps (YouTube/HLS),
-photos, a music-only AirPlay player, H.265/4K, recording, several phones at once.
+Not supported: casting from apps other than YouTube, a music-only AirPlay player,
+H.265/4K, recording, several phones at once.
 
-## Requirements
+## Download
+
+Each [GitHub release](../../releases) has a ready-made `Gaxo-<version>.dmg`
+(Apple Silicon, macOS 26). Open it and drag Gaxo to Applications.
+
+The app is ad-hoc signed, not notarized, so the first time macOS says it cannot
+verify Gaxo. Click **Done**, then go to **System Settings → Privacy & Security**
+and click **Open Anyway** next to the Gaxo message. After that it opens normally.
+Then allow incoming connections and Local Network access when asked.
+
+## Requirements (to build)
+
 
 - macOS 26 on Apple Silicon, Xcode 26 (Swift 6.3)
 - Homebrew `openssl@3` and `libplist` — **build time only**; both are linked
@@ -69,6 +84,12 @@ scripts/install.sh
 
 ```bash
 open ~/Applications/Gaxo.app
+```
+
+To make a shareable, ad-hoc signed DMG (`build/Gaxo-<version>.dmg`):
+
+```bash
+scripts/make-dmg.sh
 ```
 
 `build-app.sh` makes `build/Gaxo.app`, signed with the first Apple Development
