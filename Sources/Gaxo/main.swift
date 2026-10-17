@@ -1,1 +1,6 @@
-print("Gaxo: not implemented yet (Task 6)")
+import AppKit
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()
