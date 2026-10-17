@@ -22,11 +22,10 @@ Tested with an iPhone 17 (iPhone18,2) on iOS 26.6.1, Mac on macOS 26.5:
 | Settings: name, resolution, frame rate, keep on top, close when mirroring stops, sound | renaming restarts the receiver under the new name |
 | Take Screenshot (⇧⌘S) | saved to the Desktop, never overwriting a file |
 | Optional 4-digit code | fixed code shown in Settings; works with iOS 26 (needs UxPlay patch 0001) |
+| YouTube videos (AirPlay video) | YouTube sends its video separately; Gaxo plays it, with sound, pause and seek, then returns to mirroring |
 
-New in 0.1.0, **not yet verified with a phone**: playing YouTube videos through
-AirPlay video (YouTube sends its video separately; without this, mirroring shows a
-still picture). Also unverified: Open at login, and the iPhone remembering the code
-after Gaxo restarts.
+Not verified yet: Open at login, and the iPhone remembering the code after Gaxo
+restarts.
 
 Not supported: casting from apps other than YouTube, a music-only AirPlay player,
 H.265/4K, recording, several phones at once.
