@@ -3,6 +3,7 @@
 //
 //   swift run gaxo-probe [--name "Gaxo Probe"] [--port 7100] [--seconds N] [--debug]
 
+import AVFoundation
 import CoreGraphics
 import Foundation
 import GaxoCore
@@ -12,6 +13,7 @@ struct Options {
     var port: UInt16 = 7100
     var seconds: Double = 0
     var debug = false
+    var sound = false
 
     init(_ args: [String]) {
         var it = args.makeIterator()
@@ -21,8 +23,9 @@ struct Options {
             case "--port": port = it.next().flatMap(UInt16.init) ?? port
             case "--seconds": seconds = it.next().flatMap(Double.init) ?? seconds
             case "--debug": debug = true
+            case "--sound": sound = true
             case "-h", "--help":
-                print("usage: gaxo-probe [--name NAME] [--port BASE] [--seconds N] [--debug]")
+                print("usage: gaxo-probe [--name NAME] [--port BASE] [--seconds N] [--debug] [--sound]")
                 exit(0)
             default:
                 FileHandle.standardError.write(Data("unknown option \(arg)\n".utf8))
@@ -42,6 +45,14 @@ final class CountingSink: MediaSink {
     private(set) var audioCodec: UInt8 = 0
     private(set) var audioFrames = 0
     private(set) var volumeDB: Float?
+    private(set) var decodedAudioFrames = 0
+    private var audioDecoder: AudioDecoder?
+    let player: AudioPlayer?
+
+    init(playSound: Bool) {
+        player = playSound ? AudioPlayer() : nil
+        try? player?.start()
+    }
     private lazy var decoder = VideoDecoder { [weak self] _, _ in
         self?.lock.withLock { self?.decodedFrames += 1 }
     }
@@ -56,12 +67,29 @@ final class CountingSink: MediaSink {
 
     func videoSize(source: CGSize, size: CGSize) { lock.withLock { self.size = size } }
     func videoFlush() { decoder.flush() }
-    func audioFormat(codec: UInt8, samplesPerFrame: UInt16) { lock.withLock { audioCodec = codec } }
-    func audioFrame(_ data: UnsafeRawBufferPointer, codec: UInt8, ntpNanos: UInt64) {
-        lock.withLock { audioFrames += 1 }
+    func audioFormat(codec: UInt8, samplesPerFrame: UInt16) {
+        let decoder = try? AudioDecoder(codec: codec)
+        lock.withLock {
+            audioCodec = codec
+            audioDecoder = decoder
+        }
     }
-    func audioFlush() {}
-    func volume(db: Float) { lock.withLock { volumeDB = db } }
+
+    func audioFrame(_ data: UnsafeRawBufferPointer, codec: UInt8, ntpNanos: UInt64) {
+        let pcm = lock.withLock { () -> AVAudioPCMBuffer? in
+            audioFrames += 1
+            guard let pcm = audioDecoder?.decode(data) else { return nil }
+            decodedAudioFrames += Int(pcm.frameLength)
+            return pcm
+        }
+        if let pcm { player?.schedule(pcm) }
+    }
+
+    func audioFlush() { player?.flush() }
+    func volume(db: Float) {
+        lock.withLock { volumeDB = db }
+        player?.gain = AirPlayVolume.gain(db: db)
+    }
 
     var summary: String {
         let dims = decoder.dimensions.map { "\(Int($0.width))×\(Int($0.height))" } ?? "-"
@@ -70,7 +98,7 @@ final class CountingSink: MediaSink {
             let vol = volumeDB.map { String(format: "%.1f dB", $0) } ?? "-"
             return "video \(videoFrames) frames (\(kb) KB) size \(Int(size.width))×\(Int(size.height)) "
                 + "decoded \(decodedFrames) at \(dims) | "
-                + "audio ct=\(audioCodec) \(audioFrames) frames | volume \(vol)"
+                + "audio ct=\(audioCodec) \(audioFrames) packets → \(decodedAudioFrames) samples | volume \(vol)"
         }
     }
 }
@@ -91,7 +119,7 @@ let config = EngineConfig(
     advertise: true,
     logLevel: options.debug ? 7 : 6)
 
-let sink = CountingSink()
+let sink = CountingSink(playSound: options.sound)
 let session = SessionController()
 session.media = sink
 session.onStateChange = { state in print("state: \(state)") }
