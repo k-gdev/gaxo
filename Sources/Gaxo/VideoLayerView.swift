@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CoreMedia
 import CoreVideo
+import GaxoCore
 
 /// Shows decoded frames, letterboxed to the phone's shape, as soon as they arrive.
 final class VideoLayerView: NSView {
@@ -10,6 +11,7 @@ final class VideoLayerView: NSView {
     private var format: CMVideoFormatDescription? // used on `queue` only
     private let lock = NSLock()
     private var newestFrame: CVPixelBuffer?
+    private var shownCount = 0
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -38,9 +40,24 @@ final class VideoLayerView: NSView {
         queue.async { [self] in
             guard let sample = makeSample(pixelBuffer) else { return }
             let renderer = displayLayer.sampleBufferRenderer
-            if renderer.status == .failed { renderer.flush() }
+            if renderer.status == .failed {
+                Log.error("Video renderer failed: \(renderer.error.map { String(describing: $0) } ?? "no error"); flushing")
+                renderer.flush()
+            }
             renderer.enqueue(sample)
+            lock.withLock { shownCount += 1 }
         }
+    }
+
+    /// For the log: frames handed to the display since the last call, and the renderer's state.
+    func takeReport() -> String {
+        let shown = lock.withLock { () -> Int in
+            defer { shownCount = 0 }
+            return shownCount
+        }
+        let renderer = displayLayer.sampleBufferRenderer
+        return "shown \(shown); renderer status=\(renderer.status.rawValue) ready=\(renderer.isReadyForMoreMediaData) "
+            + "flushNeeded=\(renderer.requiresFlushToResumeDecoding) error=\(renderer.error.map { String(describing: $0) } ?? "none")"
     }
 
     /// Drops the picture (session over).

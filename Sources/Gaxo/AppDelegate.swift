@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Session
 
     private func sessionStateChanged(_ state: SessionState) {
+        Log.info("State: \(state)")
         statusModel.state = state
         statusItem.update(state: state, name: settingsStore.settings.name, accepting: accepting)
 
@@ -95,6 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case .awaitingCode:
             showStatusWindow()
+            // The person is looking at the Mac to read the code: put it in front of everything.
+            statusWindow.window?.orderFrontRegardless()
+            DispatchQueue.main.async { [self] in
+                Log.info("Status window showing code: \(statusWindow.sizeReport)")
+            }
         case .ready, .stopped, .failed:
             if currentClient != nil {
                 currentClient = nil

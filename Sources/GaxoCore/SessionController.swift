@@ -61,6 +61,9 @@ public final class SessionController: EngineDelegate {
     private var client: ClientInfo?
     private var openConnections = 0
     private var lastHeardFrom: TimeInterval = 0
+    private var codeShownAt: TimeInterval?
+    /// How long a pairing code stays up if the iPhone never comes back with it.
+    private let codeTimeout: TimeInterval = 60
 
     public static let controlQueue = DispatchQueue(label: "com.gaxo.session")
 
@@ -133,8 +136,21 @@ public final class SessionController: EngineDelegate {
         }
     }
 
-    /// Called every second: ends a session whose client went silent.
+    /// Called every second: ends a session whose client went silent, and takes
+    /// down a pairing code nobody came back with.
     public func tick() {
+        let codeExpired = lock.withLock { () -> Bool in
+            guard case .awaitingCode = _state, let shown = codeShownAt, clock() - shown > codeTimeout else {
+                return false
+            }
+            codeShownAt = nil
+            return true
+        }
+        if codeExpired {
+            Log.info("Pairing code expired")
+            setState(.ready)
+        }
+
         let silent = lock.withLock {
             client != nil && clock() - lastHeardFrom > silenceLimit
         }
@@ -189,10 +205,14 @@ public final class SessionController: EngineDelegate {
         openConnections = 0
     }
 
-    private func endSession() {
+    /// `keepingCode`: a connection closing does not take a pairing code off screen —
+    /// iOS asks for the code on a short connection and closes it before the user types it.
+    private func endSession(keepingCode: Bool = false) {
         let wasActive = lock.withLock { () -> Bool in
             let active = client != nil
             endSessionLocked()
+            if keepingCode, case .awaitingCode = _state { return false }
+            codeShownAt = nil
             return active || _state != .ready
         }
         if wasActive, case .some = lock.withLock({ self.engine }) {
@@ -239,7 +259,7 @@ public final class SessionController: EngineDelegate {
             openConnections = max(0, openConnections - 1)
             return openConnections == 0
         }
-        if last { endSession() }
+        if last { endSession(keepingCode: true) }
     }
 
     public func engineConnectionLost(reason: Int32) {
@@ -291,6 +311,7 @@ public final class SessionController: EngineDelegate {
 
     public func engineShowPIN(_ pin: String) {
         Log.info("Showing pairing code")
+        lock.withLock { codeShownAt = clock() }
         setState(.awaitingCode(pin))
     }
 
@@ -299,7 +320,10 @@ public final class SessionController: EngineDelegate {
     }
 
     private func markMirroring() {
-        guard let client = lock.withLock({ self.client }) else { return }
+        guard let client = lock.withLock({ () -> ClientInfo? in
+            codeShownAt = nil
+            return self.client
+        }) else { return }
         setState(.mirroring(client))
     }
 }

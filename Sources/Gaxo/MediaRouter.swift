@@ -11,7 +11,12 @@ final class MediaRouter: MediaSink {
     private let lock = NSLock()
     private var audioDecoder: AudioDecoder?
     private var lastDimensions: CGSize?
-    private lazy var videoDecoder = VideoDecoder { [mirror] pixelBuffer, _ in
+    private var receivedCount = 0
+    private var decodedCount = 0
+    private var lastReport = ProcessInfo.processInfo.systemUptime
+    private lazy var videoDecoder = VideoDecoder { [weak self] pixelBuffer, _ in
+        guard let self else { return }
+        lock.withLock { self.decodedCount += 1 }
         mirror.videoView.display(pixelBuffer)
     }
 
@@ -39,6 +44,7 @@ final class MediaRouter: MediaSink {
 
     func videoFrame(_ annexB: UnsafeRawBufferPointer, ntpNanos: UInt64) {
         videoDecoder.decode(annexB, ntpNanos: ntpNanos)
+        reportVideoStats()
         // The decoder's dimensions (from SPS/PPS) drive the window: first frame and rotation.
         guard let dimensions = videoDecoder.dimensions else { return }
         let changed = lock.withLock { () -> Bool in
@@ -49,6 +55,24 @@ final class MediaRouter: MediaSink {
         if changed {
             DispatchQueue.main.async { [mirror] in mirror.videoSizeChanged(dimensions) }
         }
+    }
+
+    /// Every 2 s while video flows: received → decoded → shown, to see where a stall happens.
+    private func reportVideoStats() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let counts = lock.withLock { () -> (Int, Int, CGSize?)? in
+            receivedCount += 1
+            guard now - lastReport >= 2 else { return nil }
+            defer {
+                receivedCount = 0
+                decodedCount = 0
+                lastReport = now
+            }
+            return (receivedCount, decodedCount, lastDimensions)
+        }
+        guard let (received, decoded, size) = counts else { return }
+        let dims = size.map { "\(Int($0.width))×\(Int($0.height))" } ?? "-"
+        Log.debug("Video 2 s at \(dims): received \(received), decoded \(decoded), \(mirror.videoView.takeReport())")
     }
 
     func videoSize(source: CGSize, size: CGSize) {}

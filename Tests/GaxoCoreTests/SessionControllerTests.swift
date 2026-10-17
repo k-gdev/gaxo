@@ -211,6 +211,37 @@ private final class Harness {
         #expect(h.session.state == .mirroring(Harness.phoneA))
     }
 
+    /// iOS requests the code on a short connection and closes it before the user types
+    /// the code; the code must stay on screen.
+    @Test func codeSurvivesTheRequestingConnectionClosing() {
+        let h = Harness()
+        h.session.start(config: Harness.config())
+        h.session.engineConnectionOpened()
+        h.session.engineShowPIN("0846")
+        h.session.engineConnectionClosed()
+        #expect(h.session.state == .awaitingCode("0846"))
+    }
+
+    @Test func codeExpiresAfterAMinute() {
+        let h = Harness()
+        h.session.start(config: Harness.config())
+        h.session.engineShowPIN("0846")
+        h.now += 59
+        h.session.tick()
+        #expect(h.session.state == .awaitingCode("0846"))
+        h.now += 2
+        h.session.tick()
+        #expect(h.session.state == .ready)
+    }
+
+    @Test func disconnectClearsCode() {
+        let h = Harness()
+        h.session.start(config: Harness.config())
+        h.session.engineShowPIN("0846")
+        h.session.disconnect()
+        #expect(h.session.state == .ready)
+    }
+
     @Test func mediaIsForwardedToSink() {
         let h = Harness()
         let sink = RecordingSink()

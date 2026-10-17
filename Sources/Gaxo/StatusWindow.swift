@@ -115,6 +115,15 @@ final class StatusWindowController: NSWindowController {
         super.init(window: window)
     }
 
+    /// For the log: the window's real content size next to what the SwiftUI content needs.
+    var sizeReport: String {
+        guard let window, let content = window.contentView else { return "no window" }
+        let needs = content.fittingSize
+        return "visible=\(window.isVisible) key=\(window.isKeyWindow) appActive=\(NSApp.isActive) "
+            + "content=\(Int(content.frame.width))×\(Int(content.frame.height)) "
+            + "needs=\(Int(needs.width))×\(Int(needs.height))"
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 }
