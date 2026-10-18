@@ -177,6 +177,7 @@ private final class StubEngine: EngineProtocol {
         let keyfile = FileManager.default.temporaryDirectory
             .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("identity.pem")
+        defer { try? FileManager.default.removeItem(at: keyfile.deletingLastPathComponent()) }
         var config = EngineConfig(name: "GaxoHLSTest", deviceID: "02:11:22:33:44:88", keyfile: keyfile,
                                   basePort: 0, width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
                                   pinOnce: false, advertise: false, logLevel: 0)

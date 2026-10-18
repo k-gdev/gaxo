@@ -5,14 +5,20 @@ import Testing
 
 /// Proves the vendored UxPlay engine compiles, links statically and can start
 /// and stop through the C shim and its Swift wrapper.
-@Suite struct EngineLinkTests {
+@Suite final class EngineLinkTests {
+    /// This test's folder for the identity key, removed when the test ends.
+    private let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
+
+    deinit {
+        try? FileManager.default.removeItem(at: folder)
+    }
+
     private func config(port: UInt16) -> EngineConfig {
-        let keyfile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
-            .appendingPathComponent("identity.pem")
-        return EngineConfig(name: "GaxoTest", deviceID: "02:11:22:33:44:55", keyfile: keyfile,
-                            basePort: port, width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
-                            pinOnce: false, advertise: false, logLevel: 0)
+        EngineConfig(name: "GaxoTest", deviceID: "02:11:22:33:44:55",
+                     keyfile: folder.appendingPathComponent("identity.pem"),
+                     basePort: port, width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
+                     pinOnce: false, advertise: false, logLevel: 0)
     }
 
     @Test func startsOnDynamicPortAndStops() throws {

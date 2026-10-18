@@ -93,6 +93,7 @@ private struct RTSPClient {
         let keyfile = FileManager.default.temporaryDirectory
             .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("identity.pem")
+        defer { try? FileManager.default.removeItem(at: keyfile.deletingLastPathComponent()) }
         let engine = Engine(config: EngineConfig(
             name: "GaxoPinTest", deviceID: "02:11:22:33:44:66", keyfile: keyfile, basePort: 0,
             width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
@@ -126,6 +127,7 @@ private struct RTSPClient {
         let keyfile = FileManager.default.temporaryDirectory
             .appendingPathComponent("gaxo-test-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("identity.pem")
+        defer { try? FileManager.default.removeItem(at: keyfile.deletingLastPathComponent()) }
         var config = EngineConfig(
             name: "GaxoPinTest", deviceID: "02:11:22:33:44:77", keyfile: keyfile, basePort: 0,
             width: 1920, height: 1080, refreshRate: 60, maxFPS: 60,
