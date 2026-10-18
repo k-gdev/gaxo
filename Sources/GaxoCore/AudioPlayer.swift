@@ -4,16 +4,25 @@ import Foundation
 /// Plays decoded AirPlay audio on the Mac's current output device.
 /// Keeps at most `maxQueuedSeconds` queued, dropping buffers beyond that, so
 /// latency stays bounded if the stream arrives faster than it plays.
+///
+/// Start and flush come from engine threads, stop from the main thread and the
+/// restart after an output change from Core Audio's thread: all of them run on
+/// one serial queue.
 public final class AudioPlayer {
     public var maxQueuedSeconds = 0.5
-    /// When false, buffers are discarded (sound off in Settings).
-    public var enabled = true
+    /// When false, buffers are discarded (sound off in Settings). Any thread.
+    public var enabled: Bool {
+        get { lock.withLock { _enabled } }
+        set { lock.withLock { _enabled = newValue } }
+    }
 
     let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private let queue = DispatchQueue(label: "com.gaxo.audio")
     private let lock = NSLock()
     private var queuedFrames: AVAudioFramePosition = 0
-    private var wantsToRun = false
+    private var _enabled = true
+    private var wantsToRun = false // on `queue` only
     private var configurationObserver: NSObjectProtocol?
 
     public init() {
@@ -23,7 +32,8 @@ public final class AudioPlayer {
         configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
-            self?.restartAfterConfigurationChange()
+            guard let self else { return }
+            queue.async { self.restartAfterConfigurationChange() }
         }
     }
 
@@ -32,7 +42,7 @@ public final class AudioPlayer {
     }
 
     public var isRunning: Bool {
-        engine.isRunning
+        queue.sync { engine.isRunning }
     }
 
     /// Linear gain 0…1 (see `AirPlayVolume.gain(db:)`).
@@ -42,23 +52,28 @@ public final class AudioPlayer {
     }
 
     public func start() throws {
-        wantsToRun = true
-        if !engine.isRunning {
-            engine.prepare()
-            try engine.start()
+        try queue.sync {
+            wantsToRun = true
+            if !engine.isRunning {
+                engine.prepare()
+                try engine.start()
+            }
+            player.play()
         }
-        player.play()
     }
 
     public func stop() {
-        wantsToRun = false
-        player.stop()
-        engine.stop()
-        lock.withLock { queuedFrames = 0 }
+        queue.sync {
+            wantsToRun = false
+            player.stop()
+            engine.stop()
+            lock.withLock { queuedFrames = 0 }
+        }
     }
 
+    /// On `queue`. An output change stops the engine; one that did not has nothing to restart.
     private func restartAfterConfigurationChange() {
-        guard wantsToRun else { return }
+        guard wantsToRun, !engine.isRunning else { return }
         Log.info("Audio output changed; restarting playback")
         lock.withLock { queuedFrames = 0 }
         do {
@@ -73,10 +88,12 @@ public final class AudioPlayer {
 
     /// Discards everything queued (the phone flushed its stream).
     public func flush() {
-        guard engine.isRunning else { return }
-        player.stop()
-        lock.withLock { queuedFrames = 0 }
-        player.play()
+        queue.sync {
+            guard engine.isRunning else { return }
+            player.stop()
+            lock.withLock { queuedFrames = 0 }
+            player.play()
+        }
     }
 
     public func schedule(_ buffer: AVAudioPCMBuffer) {
