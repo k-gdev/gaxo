@@ -21,6 +21,52 @@ import Testing
         #expect(text == "a1\nb1\na2\nb2\n")
     }
 
+    private func remove(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + ".1"))
+    }
+
+    private func read(_ path: String) throws -> String {
+        try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
+    }
+
+    /// The log must not grow forever: at the limit it becomes gaxo.log.1 and a new file starts.
+    @Test func fullFileBecomesDotOne() throws {
+        let url = tempFile()
+        defer { remove(url) }
+        let log = LogFile(url: url, maxBytes: 10)
+        log.append("0123456789\n")
+        log.append("next\n")
+        #expect(try read(url.path) == "next\n")
+        #expect(try read(url.path + ".1") == "0123456789\n")
+    }
+
+    @Test func onlyOneOldFileIsKept() throws {
+        let url = tempFile()
+        defer { remove(url) }
+        let log = LogFile(url: url, maxBytes: 10)
+        log.append("first-0123\n")
+        log.append("second-012\n")
+        log.append("third\n")
+        #expect(try read(url.path) == "third\n")
+        #expect(try read(url.path + ".1") == "second-012\n")
+        #expect(!FileManager.default.fileExists(atPath: url.path + ".2"))
+    }
+
+    /// The app and the probe share the file: after one of them rotates it, the other
+    /// writes to the new file, not on into gaxo.log.1.
+    @Test func otherWriterFollowsARotation() throws {
+        let url = tempFile()
+        defer { remove(url) }
+        let first = LogFile(url: url, maxBytes: 10)
+        let second = LogFile(url: url, maxBytes: 10)
+        second.append("b1\n")
+        first.append("a-01234567\n") // fills the file: first rotates it
+        second.append("b2\n")
+        #expect(try read(url.path) == "b2\n")
+        #expect(try read(url.path + ".1") == "b1\na-01234567\n")
+    }
+
     /// Only the app and the probe write ~/Library/Logs/Gaxo/gaxo.log; tests must not.
     @Test func writesToFileOnlyWhenEnabled() throws {
         let url = tempFile()

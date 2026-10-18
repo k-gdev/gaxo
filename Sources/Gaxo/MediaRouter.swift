@@ -11,23 +11,21 @@ final class MediaRouter: MediaSink {
     private let lock = NSLock()
     private var audioDecoder: AudioDecoder?
     private var lastDimensions: CGSize?
-    private var receivedCount = 0
-    private var decodedCount = 0
-    private var receivedBytes = 0
-    private var pictureFingerprints = Set<UInt64>()
-    private var lastReport = ProcessInfo.processInfo.systemUptime
+    private var stats: VideoStats
     /// Created in init, not lazily: engine threads (mirror and httpd) may reach it at once.
     private var videoDecoder: VideoDecoder!
 
-    init(mirror: MirrorWindowController, audioPlayer: AudioPlayer) {
+    /// `verboseVideoLog`: log video stats every 2 s (see `VideoStats`).
+    init(mirror: MirrorWindowController, audioPlayer: AudioPlayer,
+         verboseVideoLog: Bool = UserDefaults.standard.bool(forKey: VideoStats.defaultsKey)) {
         self.mirror = mirror
         self.audioPlayer = audioPlayer
+        stats = VideoStats(isEnabled: verboseVideoLog, now: ProcessInfo.processInfo.systemUptime)
         videoDecoder = VideoDecoder { [weak self] pixelBuffer, _ in
             guard let self else { return }
-            let fingerprint = Self.fingerprint(pixelBuffer)
-            lock.withLock {
-                self.decodedCount += 1
-                self.pictureFingerprints.insert(fingerprint)
+            if verboseVideoLog {
+                let fingerprint = Self.fingerprint(pixelBuffer)
+                lock.withLock { self.stats.pictureDecoded(fingerprint: fingerprint) }
             }
             mirror.videoView.display(pixelBuffer)
         }
@@ -51,9 +49,8 @@ final class MediaRouter: MediaSink {
     // MARK: - MediaSink
 
     func videoFrame(_ annexB: UnsafeRawBufferPointer, ntpNanos: UInt64) {
-        lock.withLock { receivedBytes += annexB.count }
         videoDecoder.decode(annexB, ntpNanos: ntpNanos)
-        reportVideoStats()
+        reportVideoStats(bytes: annexB.count)
         // The decoder's dimensions (from SPS/PPS) drive the window: first frame and rotation.
         guard let dimensions = videoDecoder.dimensions else { return }
         let changed = lock.withLock { () -> Bool in
@@ -66,25 +63,16 @@ final class MediaRouter: MediaSink {
         }
     }
 
-    /// Every 2 s while video flows: received → decoded → shown, to see where a stall happens.
-    private func reportVideoStats() {
+    /// Every 2 s while video flows, if asked for: received → decoded → shown.
+    private func reportVideoStats(bytes: Int) {
         let now = ProcessInfo.processInfo.systemUptime
-        let counts = lock.withLock { () -> (Int, Int, CGSize?, Int, Int)? in
-            receivedCount += 1
-            guard now - lastReport >= 2 else { return nil }
-            defer {
-                receivedCount = 0
-                decodedCount = 0
-                receivedBytes = 0
-                pictureFingerprints.removeAll(keepingCapacity: true)
-                lastReport = now
-            }
-            return (receivedCount, decodedCount, lastDimensions, receivedBytes, pictureFingerprints.count)
-        }
-        guard let (received, decoded, size, bytes, distinct) = counts else { return }
+        guard let (report, size) = lock.withLock({ () -> (VideoStats.Report, CGSize?)? in
+            stats.frameReceived(bytes: bytes, now: now).map { ($0, lastDimensions) }
+        }) else { return }
         let dims = size.map { "\(Int($0.width))×\(Int($0.height))" } ?? "-"
-        Log.debug("Video 2 s at \(dims): received \(received) (\(bytes / 1024) KB), decoded \(decoded) "
-            + "(\(distinct) distinct pictures), \(mirror.videoView.takeReport())")
+        Log.debug("Video 2 s at \(dims): received \(report.received) (\(report.bytes / 1024) KB), "
+            + "decoded \(report.decoded) (\(report.distinctPictures) distinct pictures), "
+            + "\(mirror.videoView.takeReport())")
     }
 
     /// A cheap fingerprint of a decoded picture (64 luma samples), to tell a moving

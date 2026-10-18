@@ -131,6 +131,17 @@ Enter Full Screen (⌃⌘F).
 ## Troubleshooting
 
 - Log: `~/Library/Logs/Gaxo/gaxo.log` (includes UxPlay's engine messages).
+  At 5 MB it becomes `gaxo.log.1` (replacing the previous one) and a new log starts.
+- Video stalls: log received/decoded/shown frame counts every 2 s (off by
+  default; quit and reopen Gaxo after changing it):
+
+  ```bash
+  defaults write com.gaxo.Gaxo verboseVideoLog -bool true
+  ```
+
+  ```bash
+  defaults delete com.gaxo.Gaxo verboseVideoLog
+  ```
 - Is Gaxo advertised? `dns-sd -B _airplay._tcp local.`
 - The iPhone lists Gaxo but never connects: usually the firewall. System
   Settings → Network → Firewall → Options → allow Gaxo.
