@@ -21,7 +21,7 @@ Tested with an iPhone 17 (iPhone18,2) on iOS 26.6.1, Mac on macOS 26.5:
 | Menu bar icon + status window; Dock icon only while a Gaxo window is open | |
 | Settings: name, resolution, frame rate, keep on top, close when mirroring stops, sound | renaming restarts the receiver under the new name |
 | Take Screenshot (⇧⌘S) | saved to the Desktop, never overwriting a file |
-| Optional 4-digit code | fixed code shown in Settings; works with iOS 26 (needs UxPlay patch 0001) |
+| Optional 4-digit code | fixed code shown in Settings; works with iOS 26 (needs UxPlay patch 0001); a deterrent, not access control (see [Using it](#using-it)) |
 | YouTube videos (AirPlay video) | YouTube sends its video separately; Gaxo plays it, with sound, pause and seek, then returns to mirroring |
 
 Not verified yet: Open at login, and the iPhone remembering the code after Gaxo
@@ -39,6 +39,12 @@ The app is ad-hoc signed, not notarized, so the first time macOS says it cannot
 verify Gaxo. Click **Done**, then go to **System Settings → Privacy & Security**
 and click **Open Anyway** next to the Gaxo message. After that it opens normally.
 Then allow incoming connections and Local Network access when asked.
+
+**Sharing the DMG.** Gaxo is GPL-3.0, and so is the UxPlay engine inside it:
+whoever you give the DMG to must also be offered its source. Collaborators on
+this repository already have it, but the repository is private, so for anyone
+else pass on the source of the same version with the DMG (the release's
+**Source code (zip)**), or a written offer to provide it (GPL-3.0, section 6).
 
 ## Requirements (to build)
 
@@ -111,6 +117,12 @@ On the iPhone: **Control Center → Screen Mirroring → Gaxo**.
 View menu: Float on Top (⌥⌘T), Actual Size (⌘0), Fit to Screen (⌥⌘0),
 Take Screenshot (⇧⌘S, saved to the Desktop, never overwriting a file),
 Enter Full Screen (⌃⌘F).
+
+**Ask for a code** (Settings → Access) keeps casual and accidental connections
+out; it is a deterrent, not access control. Like UxPlay's `-pin` mode without
+its trusted-device register (`-reg`), Gaxo does not record which devices entered
+the code, so a client that skips the code step, or tries 4-digit codes until one
+works, can still connect. Use Gaxo on networks you trust.
 
 ## How it works
 

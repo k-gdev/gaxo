@@ -80,7 +80,8 @@ struct SettingsView: View {
                 Toggle(isOn: binding(\.requireCode)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Ask for a code before mirroring")
-                        Text("The iPhone asks for this code the first time it connects; it also appears on this Mac")
+                        Text("The iPhone asks for this code the first time it connects; it also appears on this Mac. "
+                            + "A deterrent against casual connections, not real access control.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
