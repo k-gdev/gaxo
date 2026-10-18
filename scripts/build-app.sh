@@ -11,6 +11,7 @@ SIGN_ID="${GAXO_SIGN_ID:-$(security find-identity -v -p codesigning \
 SIGN_ID="${SIGN_ID:--}"
 APP="${GAXO_APP:-build/Gaxo.app}"
 case "$APP" in
+    *..*) echo "error: GAXO_APP must not contain \"..\"" >&2; exit 1 ;;
     build/*.app) ;;
     *) echo "error: GAXO_APP must be build/<name>.app" >&2; exit 1 ;;
 esac

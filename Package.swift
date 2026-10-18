@@ -16,7 +16,8 @@ let package = Package(
         .executable(name: "gaxo-probe", targets: ["gaxo-probe"]),
     ],
     targets: [
-        // UxPlay v1.73.7 lib/, unmodified (see Sources/UxPlayLib/UPSTREAM.md).
+        // UxPlay v1.73.7 lib/ plus Patches/0001, already applied (see Patches/README.md
+        // and Sources/UxPlayLib/UPSTREAM.md).
         .target(
             name: "UxPlayLib",
             path: "Sources/UxPlayLib",
