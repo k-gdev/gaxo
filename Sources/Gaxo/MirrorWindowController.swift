@@ -122,7 +122,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate, NSMenu
     }
 
     @objc func takeScreenshot(_ sender: Any?) {
-        guard let frame = videoView.lastFrame else {
+        guard let frame = videoView.screenshotFrame else {
             NSSound.beep()
             return
         }
@@ -141,7 +141,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate, NSMenu
             menuItem.state = floatsOnTop ? .on : .off
             return true
         case #selector(takeScreenshot(_:)):
-            return videoView.lastFrame != nil
+            return videoView.canTakeScreenshot
         case #selector(actualSize(_:)), #selector(fitToScreen(_:)):
             return videoSize != nil && !(window?.styleMask.contains(.fullScreen) ?? false)
         default:

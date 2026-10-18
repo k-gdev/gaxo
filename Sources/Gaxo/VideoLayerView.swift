@@ -12,7 +12,10 @@ final class VideoLayerView: NSView {
     private let lock = NSLock()
     private var newestFrame: CVPixelBuffer?
     private var shownCount = 0
-    private var playerLayer: AVPlayerLayer? // main thread only
+    // Main thread only: the AirPlay video, and its pictures for screenshots.
+    private var playerLayer: AVPlayerLayer?
+    private var playerOutput: AVPlayerItemVideoOutput?
+    private var lastPlayerFrame: CVPixelBuffer?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -30,9 +33,27 @@ final class VideoLayerView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// The most recent frame (for screenshots).
+    /// The most recent mirrored frame.
     var lastFrame: CVPixelBuffer? {
         lock.withLock { newestFrame }
+    }
+
+    /// What Take Screenshot saves: the AirPlay video's picture while one plays,
+    /// else the latest mirrored frame. Main thread.
+    var screenshotFrame: CVPixelBuffer? {
+        guard let playerOutput, let player = playerLayer?.player else { return lastFrame }
+        let time = player.currentTime()
+        // A picture is handed out once; a paused video keeps the one already taken.
+        if playerOutput.hasNewPixelBuffer(forItemTime: time),
+           let frame = playerOutput.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
+            lastPlayerFrame = frame
+        }
+        return lastPlayerFrame
+    }
+
+    /// Main thread.
+    var canTakeScreenshot: Bool {
+        playerLayer != nil || lastFrame != nil
     }
 
     /// Callable from any thread.
@@ -71,10 +92,17 @@ final class VideoLayerView: NSView {
         playerLayer.backgroundColor = NSColor.black.cgColor
         layer?.addSublayer(playerLayer)
         self.playerLayer = playerLayer
+        // No pixel format asked for: the decoder's own pictures, no conversion per frame.
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+        player.currentItem?.add(output)
+        playerOutput = output
     }
 
     /// Main thread.
     func hidePlayer() {
+        if let playerOutput { playerLayer?.player?.currentItem?.remove(playerOutput) }
+        playerOutput = nil
+        lastPlayerFrame = nil
         playerLayer?.player = nil
         playerLayer?.removeFromSuperlayer()
         playerLayer = nil
