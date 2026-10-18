@@ -55,6 +55,8 @@ public final class SessionController: EngineDelegate {
     private let silenceLimit: TimeInterval
     private let executor: (@escaping () -> Void) -> Void
     private var timer: DispatchSourceTimer?
+    /// The last state given to `onStateChange` (main queue only).
+    private var deliveredState: SessionState?
 
     private let lock = NSLock()
     private var engine: EngineProtocol?
@@ -122,6 +124,17 @@ public final class SessionController: EngineDelegate {
         }
     }
 
+    /// From "Can’t start": tries to start the receiver again. Does nothing in any other state.
+    public func retry() {
+        executor { [self] in
+            let config = lock.withLock { () -> EngineConfig? in
+                guard case .failed = _state, accepting else { return nil }
+                return self.config
+            }
+            if let config { startNow(config) }
+        }
+    }
+
     /// Ends the current session; the iPhone leaves Screen Mirroring.
     public func disconnect() {
         executor { [self] in dropNow() }
@@ -150,11 +163,11 @@ public final class SessionController: EngineDelegate {
                 return false
             }
             codeShownAt = nil
-            return true
+            return setStateLocked(.ready)
         }
         if codeExpired {
             Log.info("Pairing code expired")
-            setState(.ready)
+            notifyStateChange()
         }
 
         let silent = lock.withLock {
@@ -217,28 +230,45 @@ public final class SessionController: EngineDelegate {
     /// `keepingCode`: a connection closing does not take a pairing code off screen —
     /// iOS asks for the code on a short connection and closes it before the user types it.
     private func endSession(keepingCode: Bool = false) {
-        let wasActive = lock.withLock { () -> Bool in
+        let changed = lock.withLock { () -> Bool in
             let active = client != nil
             endSessionLocked()
             if keepingCode, case .awaitingCode = _state { return false }
             if videoActive { return false } // the mirror stream may stop while a video plays
             codeShownAt = nil
-            return active || _state != .ready
+            guard active || _state != .ready, engine != nil else { return false }
+            return setStateLocked(.ready)
         }
-        if wasActive, case .some = lock.withLock({ self.engine }) {
-            setState(.ready)
-        }
+        if changed { notifyStateChange() }
     }
 
+    // MARK: - State
+
+    // A state is decided and set in one `lock` section, so a decision made from
+    // the bookkeeping can never be applied after that bookkeeping has changed.
+
     private func setState(_ new: SessionState) {
-        let changed = lock.withLock { () -> Bool in
-            guard _state != new else { return false }
-            _state = new
-            return true
-        }
-        guard changed else { return }
-        if let onStateChange {
-            DispatchQueue.main.async { onStateChange(new) }
+        if lock.withLock({ setStateLocked(new) }) { notifyStateChange() }
+    }
+
+    /// Caller holds `lock`. Returns true when the state changed: then call
+    /// `notifyStateChange()` once the lock is released.
+    private func setStateLocked(_ new: SessionState) -> Bool {
+        guard _state != new else { return false }
+        _state = new
+        return true
+    }
+
+    /// Tells the observer on the main queue. It is given the state as it is when the
+    /// main queue gets there, so a change that overtook this one is never undone.
+    private func notifyStateChange() {
+        guard onStateChange != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let onStateChange else { return }
+            let current = state
+            guard current != deliveredState else { return }
+            deliveredState = current
+            onStateChange(current)
         }
     }
 
@@ -287,14 +317,15 @@ public final class SessionController: EngineDelegate {
     public func engineVideoStopped() {
         Log.info("The iPhone stopped mirroring")
         media?.videoFlush()
-        let (sessionContinues, playingVideo) = lock.withLock { () -> (Bool, Bool) in
+        let (sessionContinues, changed) = lock.withLock { () -> (Bool, Bool) in
             mirrorStreamActive = false
-            return (client != nil && openConnections > 0, videoActive)
+            guard client != nil && openConnections > 0 else { return (false, false) }
+            return (true, !videoActive && setStateLocked(.ready))
         }
         if !sessionContinues {
             endSession()
-        } else if !playingVideo {
-            setState(.ready)
+        } else if changed {
+            notifyStateChange()
         }
     }
 
@@ -332,8 +363,11 @@ public final class SessionController: EngineDelegate {
 
     public func engineShowPIN(_ pin: String) {
         Log.info("Showing pairing code")
-        lock.withLock { codeShownAt = clock() }
-        setState(.awaitingCode(pin))
+        let changed = lock.withLock { () -> Bool in
+            codeShownAt = clock()
+            return setStateLocked(.awaitingCode(pin))
+        }
+        if changed { notifyStateChange() }
     }
 
     public func engineLog(level: Int32, _ message: String) {
@@ -341,24 +375,26 @@ public final class SessionController: EngineDelegate {
     }
 
     private func markMirroring() {
-        guard let client = lock.withLock({ () -> ClientInfo? in
+        let changed = lock.withLock { () -> Bool in
             codeShownAt = nil
-            if self.client != nil { mirrorStreamActive = true }
-            return videoActive ? nil : self.client
-        }) else { return }
-        setState(.mirroring(client))
+            guard let client else { return false }
+            mirrorStreamActive = true
+            return !videoActive && setStateLocked(.mirroring(client))
+        }
+        if changed { notifyStateChange() }
     }
 
     // MARK: - AirPlay video (YouTube)
 
     public func engineVideoPlay(url: String, startPosition: Float) {
         Log.info("AirPlay video: play \(url) from \(startPosition) s")
-        lock.withLock {
+        let changed = lock.withLock { () -> Bool in
             videoActive = true
             lastHeardFrom = clock()
+            return setStateLocked(.playingVideo)
         }
         videoPlayer?.play(url: url, startPosition: startPosition)
-        setState(.playingVideo)
+        if changed { notifyStateChange() }
     }
 
     public func engineVideoSeek(to position: Float) {
@@ -393,13 +429,15 @@ public final class SessionController: EngineDelegate {
     }
 
     private func finishVideo() {
-        let (wasActive, mirroringClient) = lock.withLock { () -> (Bool, ClientInfo?) in
-            defer { videoActive = false }
-            return (videoActive, mirrorStreamActive ? self.client : nil)
+        let (wasActive, changed) = lock.withLock { () -> (Bool, Bool) in
+            guard videoActive else { return (false, false) }
+            videoActive = false
+            let mirroringClient = mirrorStreamActive ? client : nil
+            return (true, setStateLocked(mirroringClient.map { .mirroring($0) } ?? .ready))
         }
         guard wasActive else { return }
         videoPlayer?.stop()
-        setState(mirroringClient.map { .mirroring($0) } ?? .ready)
+        if changed { notifyStateChange() }
     }
 
     private func stopVideoIfActive() {

@@ -38,6 +38,45 @@ private final class RecordingSink: MediaSink {
     func volume(db: Float) {}
 }
 
+/// What `onStateChange` delivered, next to the session's state at that moment.
+private final class Deliveries: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [(delivered: SessionState, current: SessionState)] = []
+    var all: [(delivered: SessionState, current: SessionState)] { lock.withLock { entries } }
+
+    func append(_ delivered: SessionState, current: SessionState) {
+        lock.withLock { entries.append((delivered, current)) }
+    }
+}
+
+/// Delivers mirror frames on another thread, as fast as it can, until stopped.
+private final class FrameSpinner: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var stopped = false
+    private let done = DispatchSemaphore(value: 0)
+
+    init(session: SessionController) {
+        Thread.detachNewThread { [self] in
+            while !lock.withLock({ stopped }) {
+                session.engineVideoFrame(UnsafeRawBufferPointer(start: nil, count: 0), ntpNanos: 0)
+                lock.withLock { count += 1 }
+            }
+            done.signal()
+        }
+    }
+
+    func waitForTwoMoreFrames() {
+        let target = lock.withLock { count } + 2
+        while lock.withLock({ count }) < target {}
+    }
+
+    func stop() {
+        lock.withLock { stopped = true }
+        done.wait()
+    }
+}
+
 /// Drives a SessionController with a fake engine, a fake clock and a
 /// synchronous executor, so every test is deterministic.
 private final class Harness {
@@ -251,6 +290,64 @@ private final class Harness {
         h.session.engineShowPIN("0846")
         h.session.disconnect()
         #expect(h.session.state == .ready)
+    }
+
+    /// "Can’t start" offers Try Again: once the port is free, the receiver starts.
+    @Test func retryFromFailedStartsAgain() {
+        let h = Harness()
+        h.nextStartError = .portInUse(7100)
+        h.session.start(config: Harness.config())
+        h.nextStartError = nil
+        h.session.retry()
+        #expect(h.engines.count == 2)
+        #expect(h.session.state == .ready)
+    }
+
+    @Test func retryDoesNothingUnlessFailed() {
+        let h = Harness()
+        h.startMirroring()
+        h.session.retry()
+        #expect(h.engines.count == 1)
+        #expect(h.session.state == .mirroring(Harness.phoneA))
+    }
+
+    /// Changes reach the main thread later, possibly after newer ones; the observer must
+    /// be told the state the session is in, never an older one.
+    @Test func observerIsToldTheCurrentState() async {
+        let h = Harness()
+        let deliveries = Deliveries()
+        h.session.onStateChange = { [unowned session = h.session] state in
+            deliveries.append(state, current: session.state)
+        }
+        let mainBusy = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async { mainBusy.wait() } // two changes before main gets to them
+        h.session.start(config: Harness.config())
+        h.session.engineShowPIN("1234")
+        mainBusy.signal()
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
+
+        #expect(!deliveries.all.isEmpty)
+        for (delivered, current) in deliveries.all {
+            #expect(delivered == current)
+        }
+    }
+
+    /// A frame arriving while the session ends must not bring back "Mirroring" with
+    /// nobody connected (the state is decided and set in one step).
+    @Test func frameRacingDisconnectLeavesReady() {
+        let h = Harness()
+        h.startMirroring()
+        let frames = FrameSpinner(session: h.session)
+        defer { frames.stop() }
+        for _ in 0..<5_000 {
+            h.request(Harness.phoneA)
+            h.session.disconnect()
+            frames.waitForTwoMoreFrames() // the frame in flight during disconnect has finished
+            guard h.session.state == .ready else {
+                Issue.record("state \(h.session.state) after disconnect")
+                return
+            }
+        }
     }
 
     @Test func mediaIsForwardedToSink() {

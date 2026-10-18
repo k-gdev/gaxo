@@ -49,6 +49,7 @@ final class StatusItemController {
         case .showWindow: #selector(AppDelegate.showStatusWindow)
         case .showMirrorWindow: #selector(AppDelegate.showMirrorWindow)
         case .disconnect: #selector(AppDelegate.disconnect)
+        case .tryAgain: #selector(AppDelegate.tryAgain)
         case .settings: #selector(AppDelegate.showSettings)
         case .quit: #selector(NSApplication.terminate(_:))
         }

@@ -13,6 +13,7 @@ final class StatusViewModel: ObservableObject {
 struct StatusView: View {
     @ObservedObject var model: StatusViewModel
     var openSettings: () -> Void
+    var tryAgain: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +48,9 @@ struct StatusView: View {
                 Circle().fill(dotColor).frame(width: 8, height: 8).accessibilityHidden(true)
                 Text(footer).font(.callout)
                 Spacer()
+                if case .failed = model.state {
+                    Button("Try Again", action: tryAgain)
+                }
                 Button("Settings…", action: openSettings)
             }
             .padding(.horizontal, 20)
@@ -104,14 +108,15 @@ struct StatusView: View {
 }
 
 final class StatusWindowController: NSWindowController {
-    init(model: StatusViewModel, openSettings: @escaping () -> Void) {
+    init(model: StatusViewModel, openSettings: @escaping () -> Void, tryAgain: @escaping () -> Void) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: true)
         window.title = "Gaxo"
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.fullScreenNone]
-        window.contentView = NSHostingView(rootView: StatusView(model: model, openSettings: openSettings))
+        window.contentView = NSHostingView(rootView: StatusView(model: model, openSettings: openSettings,
+                                                                  tryAgain: tryAgain))
         window.setContentSize(window.contentView!.fittingSize)
         window.center()
         window.setFrameAutosaveName("GaxoStatusWindow")

@@ -35,6 +35,14 @@ import Testing
         #expect(status.contains("7100"))
     }
 
+    /// "Can’t start" offers a way out besides toggling Accept connections.
+    @Test func failedMenuOffersTryAgain() {
+        let items = StatusMenuModel.items(state: .failed(.portInUse(7100)), name: "Gaxo", accepting: true)
+        #expect(items.contains(.action(title: "Try Again", key: "", id: .tryAgain)))
+        #expect(!StatusMenuModel.items(state: .ready, name: "Gaxo", accepting: true)
+            .contains(.action(title: "Try Again", key: "", id: .tryAgain)))
+    }
+
     @Test func pausedMenuSaysNotVisible() {
         let items = StatusMenuModel.items(state: .stopped, name: "Gaxo", accepting: false)
         #expect(items.first == .header(title: "Gaxo", status: "Paused · not visible to iPhones"))

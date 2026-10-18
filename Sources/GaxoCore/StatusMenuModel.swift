@@ -2,7 +2,7 @@
 /// Pure data, so the AppKit menu is a thin rendering of it.
 public enum StatusMenuModel {
     public enum ActionID: Equatable {
-        case showWindow, showMirrorWindow, disconnect, settings, quit
+        case showWindow, showMirrorWindow, disconnect, tryAgain, settings, quit
     }
 
     public enum Item: Equatable {
@@ -23,6 +23,9 @@ public enum StatusMenuModel {
             .toggle(title: "Accept connections", isOn: accepting),
             .separator,
         ]
+        if case .failed = state {
+            items += [.action(title: "Try Again", key: "", id: .tryAgain), .separator]
+        }
         if state.isShowingPhone {
             items += [
                 .action(title: "Show Mirror Window", key: "", id: .showMirrorWindow),

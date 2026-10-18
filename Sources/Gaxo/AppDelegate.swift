@@ -12,9 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingSessionEnd: DispatchWorkItem?
     private var statusWindowPolicy = StatusWindowPolicy()
     private var statusItem: StatusItemController!
-    private lazy var statusWindow = StatusWindowController(model: statusModel) { [weak self] in
-        self?.showSettings()
-    }
+    private lazy var statusWindow = StatusWindowController(
+        model: statusModel,
+        openSettings: { [weak self] in self?.showSettings() },
+        tryAgain: { [weak self] in self?.tryAgain() })
     private lazy var mirror: MirrorWindowController = {
         let mirror = MirrorWindowController()
         mirror.onUserClose = { [weak self] in self?.userClosedMirror() }
@@ -209,6 +210,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func disconnect() {
         session.disconnect()
+    }
+
+    /// From "Can’t start" (e.g. the port was taken and is free again).
+    @objc func tryAgain() {
+        session.retry()
     }
 
     @objc func toggleAccepting() {
